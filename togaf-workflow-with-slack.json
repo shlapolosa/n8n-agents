@@ -1,0 +1,1594 @@
+{
+  "name": "TOGAF Enterprise Delivery with Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {
+          "responseMode": "responseNodes"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [0, 0],
+      "id": "chat-trigger",
+      "name": "Chat Trigger",
+      "webhookId": "togaf-delivery"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "togaf-delivery",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 300],
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "webhookId": "togaf-delivery-api",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "HEADER_AUTH_CREDENTIAL_ID",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Normalize input from Chat Trigger or Webhook Trigger\nconst inputData = $input.first().json;\n\n// Determine trigger source and extract chatInput\nlet chatInput = '';\nlet triggerSource = 'chat';\n\nif (inputData.chatInput) {\n  // From Chat Trigger\n  chatInput = inputData.chatInput;\n  triggerSource = 'chat';\n} else if (inputData.body && inputData.body.chatInput) {\n  // From Webhook Trigger (POST body)\n  chatInput = inputData.body.chatInput;\n  triggerSource = 'webhook';\n} else if (inputData.query && inputData.query.chatInput) {\n  // From Webhook Trigger (query params)\n  chatInput = inputData.query.chatInput;\n  triggerSource = 'webhook';\n}\n\nreturn {\n  json: {\n    chatInput,\n    triggerSource,\n    originalData: inputData\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [150, 150],
+      "id": "input-normalizer",
+      "name": "Input Normalizer"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Quick parse to extract project name and generate repo name\nconst chatInput = $input.first().json.chatInput || '';\nconst triggerSource = $input.first().json.triggerSource || 'chat';\n\n// Extract project name from first line or sentence\nlet projectName = chatInput.split('\\n')[0].substring(0, 100);\nif (projectName.length > 50) {\n  projectName = projectName.substring(0, 50) + '...';\n}\n\n// Generate sanitized repo name\nlet repoName = projectName\n  .toLowerCase()\n  .replace(/[^a-z0-9\\s-]/g, '')\n  .replace(/\\s+/g, '-')\n  .replace(/-+/g, '-')\n  .substring(0, 50);\n\n// Add timestamp suffix to ensure uniqueness\nrepoName = repoName + '-' + Date.now().toString().slice(-6);\n\n// Initialize status log for tracking progress (used by webhook response)\nconst statusLog = ['🚀 Starting TOGAF Enterprise Architecture Process'];\n\nreturn {\n  json: {\n    chatInput,\n    projectName,\n    repositoryName: repoName,\n    triggerSource,\n    statusLog,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [300, 150],
+      "id": "quick-parse",
+      "name": "Quick Parse"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "SLACK_CHANNEL_ID"
+        },
+        "text": "=/microservice create {{ $json.repositoryName }} python",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [600, 150],
+      "id": "slack-create-microservice",
+      "name": "Create Microservice via Slack",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "options": {
+          "webhookSuffix": "=/togaf-resume-{{ $json.repositoryName }}"
+        }
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [900, 150],
+      "id": "wait-for-repo",
+      "name": "Wait for Repo Ready"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Quick Parse').item.json.chatInput }}\n\nRepository Name: {{ $('Quick Parse').item.json.repositoryName }}\n\nParse and analyze this project input. Create the project context JSON for downstream agents.",
+        "options": {
+          "systemMessage": "You are a TOGAF-certified Enterprise Architecture workflow orchestrator. Your role is to:\n1. Parse the project input and extract: project name, domain, high-level requirements\n2. The repository name has already been created: use the one provided\n3. Create initial project context JSON for downstream agents\n\nOutput ONLY valid JSON in this format:\n{\n  \"projectName\": \"Human readable project name\",\n  \"repositoryName\": \"<use the provided repository name>\",\n  \"domain\": \"e.g., Healthcare, Finance, Retail, Technology\",\n  \"initialRequirements\": \"Summarized requirements from input\",\n  \"stakeholders\": [\"list\", \"of\", \"stakeholders\"]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [1200, 150],
+      "id": "orchestrator-agent",
+      "name": "Orchestrator Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [1200, 350],
+      "id": "openai-orchestrator",
+      "name": "OpenAI Orchestrator",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.output }}\n\nAnalyze the above project context and create comprehensive requirements documentation in ArchiMate 3.1 XML format.\n\nInclude:\n- Stakeholder elements\n- Driver elements  \n- Goal elements\n- Requirement elements\n- Outcome elements\n- Assessment elements\n\nWith proper relationships between elements.",
+        "options": {
+          "systemMessage": "You are a Business Analyst expert in TOGAF ADM and ArchiMate 3.1. Your role is to:\n1. Elicit and document comprehensive requirements\n2. Create user stories and acceptance criteria\n3. Output ArchiMate Motivation layer elements (Stakeholder, Driver, Assessment, Goal, Outcome, Requirement)\n\nGenerate ArchiMate 3.1 compliant XML following Open Group Exchange Format:\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"requirements-model\">\n  <name>Requirements Model</name>\n  <elements>\n    <element identifier=\"stakeholder-1\" xsi:type=\"Stakeholder\"><name>...</name><documentation>...</documentation></element>\n    <element identifier=\"driver-1\" xsi:type=\"Driver\"><name>...</name></element>\n    <element identifier=\"goal-1\" xsi:type=\"Goal\"><name>...</name></element>\n    <element identifier=\"requirement-1\" xsi:type=\"Requirement\"><name>...</name></element>\n  </elements>\n  <relationships>\n    <relationship identifier=\"r1\" xsi:type=\"Association\" source=\"stakeholder-1\" target=\"driver-1\"/>\n  </relationships>\n</model>\n\nBe thorough. Include ALL requirements. Output ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [1500, 0],
+      "id": "ba-agent",
+      "name": "BA Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [1500, 200],
+      "id": "openai-ba",
+      "name": "OpenAI BA",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.output }}\n\nAnalyze the above project context and identify all applicable compliance requirements, regulations, and standards based on the domain. Output in ArchiMate 3.1 XML format.",
+        "options": {
+          "systemMessage": "You are a Compliance Officer with expertise in regulatory frameworks and ArchiMate 3.1. Your role is to:\n1. Identify applicable regulations based on domain (GDPR, HIPAA, SOX, PCI-DSS, ISO 27001, etc.)\n2. Map compliance requirements to ArchiMate Constraint elements\n3. Document standards and policies as Principle elements\n\nGenerate ArchiMate 3.1 XML with:\n- Constraint elements for regulations\n- Requirement elements for compliance requirements\n- Principle elements for standards\n- Relationships showing how constraints influence requirements\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"compliance-model\">\n  <name>Compliance Model</name>\n  <elements>\n    <element identifier=\"constraint-1\" xsi:type=\"Constraint\"><name>GDPR Article 17 - Right to Erasure</name><documentation>...</documentation></element>\n    <element identifier=\"principle-1\" xsi:type=\"Principle\"><name>Data Minimization</name></element>\n    <element identifier=\"requirement-c1\" xsi:type=\"Requirement\"><name>Personal Data Deletion Capability</name></element>\n  </elements>\n  <relationships>\n    <relationship identifier=\"r1\" xsi:type=\"Influence\" source=\"constraint-1\" target=\"requirement-c1\"/>\n  </relationships>\n</model>\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [1500, 350],
+      "id": "compliance-agent",
+      "name": "Compliance Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [1500, 550],
+      "id": "openai-compliance",
+      "name": "OpenAI Compliance",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1800, 150],
+      "id": "merge-phase1",
+      "name": "Merge Phase 1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nBased on the requirements and compliance analysis above, create a Business Model Canvas in ArchiMate 3.1 XML format.",
+        "options": {
+          "systemMessage": "You are a Business Owner creating a Business Model Canvas using ArchiMate 3.1. Your role is to:\n1. Document value proposition\n2. Map customer segments, channels, relationships\n3. Identify revenue streams and cost structure\n4. Create Resource and Capability elements\n\nGenerate ArchiMate XML for Strategy layer:\n- Value elements (value propositions)\n- Resource elements (key resources)\n- Capability elements (key activities)\n- Course of Action elements (strategies)\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"business-canvas-model\">\n  <name>Business Canvas Model</name>\n  <elements>...</elements>\n  <relationships>...</relationships>\n</model>\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [2100, 150],
+      "id": "business-owner-agent",
+      "name": "Business Owner Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [2100, 350],
+      "id": "openai-business-owner",
+      "name": "OpenAI Business Owner",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate comprehensive business architecture in ArchiMate 3.1 XML format.",
+        "options": {
+          "systemMessage": "You are a Business Architect expert in TOGAF and ArchiMate 3.1. Create comprehensive business architecture including:\n- Motivation Layer (Goals, Drivers, Assessments)\n- Strategy Layer (Courses of Action, Resources)\n- Capability Map (3 levels)\n- Business Layer (Processes, Functions, Roles)\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"business-architecture-model\">\n  <name>Business Architecture Model</name>\n  <elements>...</elements>\n  <relationships>...</relationships>\n</model>\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [2400, 0],
+      "id": "business-architect-agent",
+      "name": "Business Architect Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [2400, 200],
+      "id": "openai-business-architect",
+      "name": "OpenAI Business Architect",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nProvide technology recommendations in ArchiMate 3.1 XML format.",
+        "options": {
+          "systemMessage": "You are a CTO providing technology recommendations based on ArchiMate capability analysis.\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"tech-recommendations-model\">\n  <name>Technology Recommendations</name>\n  <elements>...</elements>\n  <relationships>...</relationships>\n</model>\n\nInclude documentation with rationale for each technology choice. Output ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [2400, 350],
+      "id": "cto-agent",
+      "name": "CTO Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [2400, 550],
+      "id": "openai-cto",
+      "name": "OpenAI CTO",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2700, 150],
+      "id": "merge-phase3a",
+      "name": "Merge Phase 3A"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate application architecture in ArchiMate 3.1 XML format.",
+        "options": {
+          "systemMessage": "You are an Application Architect creating ArchiMate 3.1 Application Architecture.\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"application-architecture-model\">\n  <name>Application Architecture Model</name>\n  <elements>...</elements>\n  <relationships>...</relationships>\n</model>\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [3000, 150],
+      "id": "app-architect-agent",
+      "name": "Application Architect Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [3000, 350],
+      "id": "openai-app-architect",
+      "name": "OpenAI App Architect",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate infrastructure/technology architecture in ArchiMate 3.1 XML format.",
+        "options": {
+          "systemMessage": "You are an Infrastructure Architect creating ArchiMate 3.1 Technology Architecture.\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"infrastructure-architecture-model\">\n  <name>Infrastructure Architecture Model</name>\n  <elements>...</elements>\n  <relationships>...</relationships>\n</model>\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [3300, 150],
+      "id": "infra-architect-agent",
+      "name": "Infrastructure Architect Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [3300, 350],
+      "id": "openai-infra-architect",
+      "name": "OpenAI Infra Architect",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate implementation and migration planning in ArchiMate 3.1 XML format. Also compile a PRD summary document.",
+        "options": {
+          "systemMessage": "You are a Project Manager creating TOGAF Implementation & Migration Architecture.\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"implementation-plan-model\">\n  <name>Implementation Plan Model</name>\n  <elements>...</elements>\n  <relationships>...</relationships>\n</model>\n\nAfter the XML, also output a PRD SUMMARY in markdown format."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [3600, 150],
+      "id": "pm-agent",
+      "name": "Project Manager Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [3600, 350],
+      "id": "openai-pm",
+      "name": "OpenAI PM",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nBased on the architecture analysis above, generate a KubeVela OAM Application YAML file for deploying this solution.",
+        "options": {
+          "systemMessage": "You are a Solution Architect creating a KubeVela OAM (Open Application Model) deployment specification.\n\nBased on the architecture analysis provided, generate a VALID KubeVela OAM Application YAML file.\n\nCRITICAL: You may ONLY use the following definitions that exist in our platform:\n\n## AVAILABLE COMPONENT TYPES:\n- webservice: Knative-based web service (params: image, port, resources, language, framework, targetEnvironment)\n- identity-service: Identity/Auth service (params: domain, customUserProfiles, javaVersion, databaseProvisioning)\n- graphql-gateway: GraphQL Federation gateway (params: autoSchema, schemaRefreshInterval)\n- rasa-chatbot: Conversational AI (params: rasaImage, actionsImage, resources)\n- realtime-platform: IoT/Realtime data (params: database, visualization, iot, dataRetention)\n- camunda-orchestrator: BPMN orchestration (params: camundaMode, realtimePlatform, enableEventStreaming)\n- kafka: Message streaming (params: replicas, storageSize)\n- redis: Caching (params: architecture, replicaCount, storageSize)\n- mongodb: Document database (params: replicaCount, storageSize, database)\n- postgresql: Relational database (params: name, database, username, storage)\n- vcluster: Virtual Kubernetes cluster (params: isolationEnabled, serviceType)\n- clickhouse: Analytics database (params: version, replicas, storageSize)\n- neon-postgres: Serverless Postgres (params: database, region, computeSize)\n- auth0-idp: Auth0 identity provider (params: name, targetEnvironment)\n\n## AVAILABLE TRAITS:\n- ingress: HTTP routing (params: domain, path, enableTLS)\n- autoscaler: HPA scaling (params: minReplicas, maxReplicas, targetCPU)\n- kafka-producer: Kafka producer config (params: topics)\n- kafka-consumer: Kafka consumer config (params: topics, consumerGroup)\n\n## AVAILABLE POLICIES:\n- crossplane-execution-order: Deployment ordering (params: phases, phaseDelay)\n- health: Health checks (params: probeTimeout, probeInterval)\n- crossplane-workflow: Workflow config (params: enabled, timeout, mode)\n\n## AVAILABLE WORKFLOW STEPS:\n- create-crossplane-claims\n- wait-for-claims\n- cleanup-failed-claims\n\n## OUTPUT FORMAT:\nGenerate a complete, valid YAML file with this structure:\n\napiVersion: core.oam.dev/v1beta1\nkind: Application\nmetadata:\n  name: <application-name>\n  namespace: <namespace>\nspec:\n  components:\n    - name: <component-name>\n      type: <component-type-from-list-above>\n      properties:\n        <component-specific-properties>\n      traits:\n        - type: <trait-type-from-list-above>\n          properties:\n            <trait-specific-properties>\n  policies:\n    - name: <policy-name>\n      type: <policy-type-from-list-above>\n      properties:\n        <policy-specific-properties>\n  workflow:\n    steps:\n      - name: <step-name>\n        type: <step-type-from-list-above>\n        properties:\n          <step-specific-properties>\n\nRULES:\n1. ONLY use component types, traits, policies, and workflow steps listed above\n2. Match component properties to the documented parameters\n3. Use realistic resource values (cpu: \"500m\", memory: \"512Mi\")\n4. Include appropriate traits for web-facing components (ingress, autoscaler)\n5. Include policies for execution ordering if multiple components\n6. Output ONLY the YAML - no explanations before or after"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [3900, 150],
+      "id": "solution-architect-agent",
+      "name": "Solution Architect Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [3900, 350],
+      "id": "openai-solution-architect",
+      "name": "OpenAI Solution Architect",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Collect all outputs from the workflow\nconst items = $input.all();\n\n// Get repo name and trigger source from Quick Parse node\nconst repoName = $('Quick Parse').first().json.repositoryName;\nconst projectName = $('Quick Parse').first().json.projectName;\nconst triggerSource = $('Quick Parse').first().json.triggerSource || 'chat';\n\nlet projectContext = {\n  projectName: projectName,\n  repositoryName: repoName,\n  domain: 'Technology',\n  triggerSource: triggerSource\n};\n\n// Find outputs and categorize them\nconst artifacts = {};\nlet prdContent = '';\n\nfor (const item of items) {\n  const output = item.json.output || '';\n  \n  // Categorize XML outputs by identifier\n  if (output.includes('<?xml')) {\n    if (output.includes('requirements-model')) artifacts.requirements = output;\n    else if (output.includes('compliance-model')) artifacts.compliance = output;\n    else if (output.includes('business-canvas-model')) artifacts.businessCanvas = output;\n    else if (output.includes('business-architecture-model')) artifacts.businessArchitecture = output;\n    else if (output.includes('tech-recommendations')) artifacts.techRecommendations = output;\n    else if (output.includes('application-architecture-model')) artifacts.applicationArchitecture = output;\n    else if (output.includes('infrastructure-architecture-model')) artifacts.infrastructureArchitecture = output;\n    else if (output.includes('implementation-plan-model')) artifacts.implementationPlan = output;\n  }\n  \n  // Extract OAM Application YAML (from Solution Architect)\n  if (output.includes('apiVersion: core.oam.dev')) {\n    artifacts.oamApplication = output;\n  }\n  \n  // Extract PRD content (markdown after XML)\n  if (output.includes('# ') && output.includes('PRD')) {\n    const prdMatch = output.match(/# [\\s\\S]+$/m);\n    if (prdMatch) prdContent = prdMatch[0];\n  }\n}\n\n// Use final output as PRD if not found\nif (!prdContent && items.length > 0) {\n  const lastOutput = items[items.length - 1].json.output || '';\n  if (lastOutput.includes('#')) {\n    prdContent = lastOutput.replace(/^[\\s\\S]*?(?=# )/m, '');\n  } else {\n    prdContent = lastOutput;\n  }\n}\n\n// Build the complete status log for webhook response\nconst statusLog = [\n  '🚀 Starting TOGAF Enterprise Architecture Process',\n  '✅ Repository Created Successfully',\n  '📋 Phase 2: Requirements & Compliance Analysis',\n  '📊 Phase 3: Business Architecture',\n  '🏗️ Phase 4: Technical Architecture',\n  '📝 Phase 5: Committing Artifacts'\n];\n\nreturn {\n  json: {\n    ...projectContext,\n    artifacts,\n    prdContent,\n    statusLog,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4200, 150],
+      "id": "parse-context",
+      "name": "Parse Project Context"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "create",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/requirements-model.xml",
+        "fileContent": "={{ $json.artifacts.requirements || '<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Requirements Model</name><elements/></model>' }}",
+        "commitMessage": "Add requirements model (ArchiMate 3.1)",
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [4500, -150],
+      "id": "commit-requirements",
+      "name": "Commit Requirements",
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "create",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/compliance-model.xml",
+        "fileContent": "={{ $json.artifacts.compliance || '<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Compliance Model</name><elements/></model>' }}",
+        "commitMessage": "Add compliance model (ArchiMate 3.1)",
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [4500, 0],
+      "id": "commit-compliance",
+      "name": "Commit Compliance",
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "create",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/business-canvas-model.xml",
+        "fileContent": "={{ $json.artifacts.businessCanvas || '<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Business Canvas Model</name><elements/></model>' }}",
+        "commitMessage": "Add business canvas model (ArchiMate 3.1)",
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [4500, 150],
+      "id": "commit-business-canvas",
+      "name": "Commit Business Canvas",
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "create",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/business-architecture-model.xml",
+        "fileContent": "={{ $json.artifacts.businessArchitecture || '<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Business Architecture Model</name><elements/></model>' }}",
+        "commitMessage": "Add business architecture model (ArchiMate 3.1)",
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [4500, 300],
+      "id": "commit-business-arch",
+      "name": "Commit Business Architecture",
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "create",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/tech-recommendations-model.xml",
+        "fileContent": "={{ $json.artifacts.techRecommendations || '<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Tech Recommendations</name><elements/></model>' }}",
+        "commitMessage": "Add technology recommendations (ArchiMate 3.1)",
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [4500, 450],
+      "id": "commit-tech-rec",
+      "name": "Commit Tech Recommendations",
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [4800, 150],
+      "id": "merge-commits1",
+      "name": "Merge Commits 1"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "create",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/application-architecture-model.xml",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.applicationArchitecture || '<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Application Architecture Model</name><elements/></model>' }}",
+        "commitMessage": "Add application architecture model (ArchiMate 3.1)",
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [5100, 0],
+      "id": "commit-app-arch",
+      "name": "Commit App Architecture",
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "create",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/infrastructure-architecture-model.xml",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.infrastructureArchitecture || '<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Infrastructure Architecture Model</name><elements/></model>' }}",
+        "commitMessage": "Add infrastructure architecture model (ArchiMate 3.1)",
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [5100, 150],
+      "id": "commit-infra-arch",
+      "name": "Commit Infra Architecture",
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "create",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/implementation-plan-model.xml",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.implementationPlan || '<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Implementation Plan Model</name><elements/></model>' }}",
+        "commitMessage": "Add implementation plan model (ArchiMate 3.1)",
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [5100, 300],
+      "id": "commit-impl-plan",
+      "name": "Commit Implementation Plan",
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "create",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/deployment/application.oam.yaml",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.oamApplication || 'apiVersion: core.oam.dev/v1beta1\\nkind: Application\\nmetadata:\\n  name: placeholder\\nspec:\\n  components: []' }}",
+        "commitMessage": "Add KubeVela OAM Application deployment spec",
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [5100, 450],
+      "id": "commit-solution-arch",
+      "name": "Commit OAM Application",
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [5400, 150],
+      "id": "merge-commits2",
+      "name": "Merge Commits 2"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "create",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/PRD.md",
+        "fileContent": "={{ $('Parse Project Context').item.json.prdContent || '# Product Requirements Document\\n\\nNo content generated.' }}",
+        "commitMessage": "Add Product Requirements Document",
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [5700, 150],
+      "id": "commit-prd",
+      "name": "Commit PRD",
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "SLACK_CHANNEL_ID"
+        },
+        "text": "=:white_check_mark: *TOGAF Enterprise Architecture Complete*\n\n:file_folder: Repository: https://github.com/shlapolosa/{{ $('Parse Project Context').item.json.repositoryName }}\n\n:page_facing_up: Artifacts committed to `docs/` folder:\n• 8 ArchiMate 3.1 XML models\n• KubeVela OAM Application spec (application.oam.yaml)\n• Product Requirements Document (PRD.md)",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [6000, 150],
+      "id": "slack-completion",
+      "name": "Send Completion Notification",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "summary-field",
+              "name": "summary",
+              "type": "string",
+              "value": "=TOGAF Enterprise Architecture workflow completed!\n\nRepository: https://github.com/shlapolosa/{{ $('Parse Project Context').item.json.repositoryName }}\n\nArtifacts committed to docs/ folder:\n- docs/architecture/requirements-model.xml\n- docs/architecture/compliance-model.xml\n- docs/architecture/business-canvas-model.xml\n- docs/architecture/business-architecture-model.xml\n- docs/architecture/tech-recommendations-model.xml\n- docs/architecture/application-architecture-model.xml\n- docs/architecture/infrastructure-architecture-model.xml\n- docs/architecture/implementation-plan-model.xml\n- docs/deployment/application.oam.yaml (KubeVela OAM)\n- docs/PRD.md"
+            },
+            {
+              "id": "repo-url-field",
+              "name": "repositoryUrl",
+              "type": "string",
+              "value": "=https://github.com/shlapolosa/{{ $('Parse Project Context').item.json.repositoryName }}"
+            },
+            {
+              "id": "status-log-field",
+              "name": "statusLog",
+              "type": "array",
+              "value": "={{ $('Parse Project Context').item.json.statusLog }}"
+            },
+            {
+              "id": "trigger-source-field",
+              "name": "triggerSource",
+              "type": "string",
+              "value": "={{ $('Parse Project Context').item.json.triggerSource }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [6300, 150],
+      "id": "final-summary",
+      "name": "Final Summary"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "condition-chat",
+                    "leftValue": "={{ $json.triggerSource }}",
+                    "rightValue": "chat",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "chat"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "condition-webhook",
+                    "leftValue": "={{ $json.triggerSource }}",
+                    "rightValue": "webhook",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "webhook"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [6500, 150],
+      "id": "response-router",
+      "name": "Response Router"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"summary\": {{ JSON.stringify($json.summary) }},\n  \"repositoryUrl\": {{ JSON.stringify($json.repositoryUrl) }},\n  \"statusLog\": {{ JSON.stringify($json.statusLog) }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [6700, 300],
+      "id": "respond-webhook",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "content": "## TOGAF Enterprise Delivery with Slack\n\n### Dual Entry Points:\n- **Chat Trigger**: Interactive testing via n8n chat\n- **Webhook Trigger**: Programmatic API integration (POST /togaf-delivery)\n\n### Setup Required:\n1. Replace `SLACK_CHANNEL_ID` with your channel ID\n2. Replace `SLACK_CREDENTIAL_ID` with your Slack OAuth2 credential\n3. Replace `OPENAI_CREDENTIAL_ID` with your OpenAI credential\n4. Replace `GITHUB_CREDENTIAL_ID` with your GitHub credential\n5. Replace `HEADER_AUTH_CREDENTIAL_ID` with your Header Auth credential\n6. Deploy and activate the **TOGAF Slack Listener** workflow\n7. Set the `N8N_WEBHOOK_URL` environment variable\n\n### Flow:\n1. User inputs project requirements (chat or webhook)\n2. Input Normalizer unifies the input format\n3. Quick Parse extracts project name, generates repo name\n4. Slack command creates microservice repo\n5. Wait for Slack listener to resume workflow\n6. AI agents run with confirmed repo name\n7. Commit all artifacts to docs/ folder\n8. Response Router sends appropriate response:\n   - Chat: \"Progress: Complete\" message\n   - Webhook: JSON response with statusLog",
+        "height": 480,
+        "width": 400
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-350, -100],
+      "id": "sticky-instructions",
+      "name": "Instructions"
+    },
+    {
+      "parameters": {
+        "message": "=🚀 **Starting TOGAF Enterprise Architecture Process**\n\nProject: **{{ $json.projectName }}**\nRepository: `{{ $json.repositoryName }}`\n\n⏳ Creating microservice repository via Slack...",
+        "waitUserReply": false
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1,
+      "position": [450, 150],
+      "id": "progress-start",
+      "name": "Progress: Starting"
+    },
+    {
+      "parameters": {
+        "message": "=✅ **Repository Created Successfully**\n\n📁 Repository: `{{ $('Quick Parse').item.json.repositoryName }}`\n\n⏳ Starting AI agent analysis...\n\n**Phase 1:** Orchestrating workflow and parsing requirements...",
+        "waitUserReply": false
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1,
+      "position": [1050, 150],
+      "id": "progress-repo-ready",
+      "name": "Progress: Repo Ready"
+    },
+    {
+      "parameters": {
+        "message": "=📋 **Phase 2: Requirements & Compliance Analysis**\n\n🔄 Running in parallel:\n• Business Analyst Agent - Requirements modeling\n• Compliance Agent - Regulatory analysis",
+        "waitUserReply": false
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1,
+      "position": [1350, 150],
+      "id": "progress-phase2",
+      "name": "Progress: Phase 2"
+    },
+    {
+      "parameters": {
+        "message": "=📊 **Phase 3: Business Architecture**\n\n🔄 Running:\n• Business Owner Agent - Business Model Canvas\n• Business Architect Agent - Business architecture\n• CTO Agent - Technology recommendations",
+        "waitUserReply": false
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1,
+      "position": [1950, 150],
+      "id": "progress-phase3",
+      "name": "Progress: Phase 3"
+    },
+    {
+      "parameters": {
+        "message": "=🏗️ **Phase 4: Technical Architecture**\n\n🔄 Running sequentially:\n• Application Architect Agent\n• Infrastructure Architect Agent\n• Project Manager Agent\n• Solution Architect Agent (KubeVela OAM)",
+        "waitUserReply": false
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1,
+      "position": [2850, 150],
+      "id": "progress-phase4",
+      "name": "Progress: Phase 4"
+    },
+    {
+      "parameters": {
+        "message": "=📝 **Phase 5: Committing Artifacts**\n\n⏳ Saving architecture documents to GitHub:\n• 8 ArchiMate XML models\n• KubeVela OAM deployment spec\n• Product Requirements Document",
+        "waitUserReply": false
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1,
+      "position": [4050, 150],
+      "id": "progress-committing",
+      "name": "Progress: Committing"
+    },
+    {
+      "parameters": {
+        "message": "={{ $json.summary }}",
+        "waitUserReply": false
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1,
+      "position": [6700, 0],
+      "id": "progress-complete",
+      "name": "Progress: Complete"
+    }
+  ],
+  "connections": {
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Input Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Input Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input Normalizer": {
+      "main": [
+        [
+          {
+            "node": "Quick Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quick Parse": {
+      "main": [
+        [
+          {
+            "node": "Create Microservice via Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Microservice via Slack": {
+      "main": [
+        [
+          {
+            "node": "Wait for Repo Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Repo Ready": {
+      "main": [
+        [
+          {
+            "node": "Orchestrator Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Orchestrator": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Orchestrator Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Orchestrator Agent": {
+      "main": [
+        [
+          {
+            "node": "BA Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Compliance Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI BA": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "BA Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Compliance": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Compliance Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BA Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Phase 1": {
+      "main": [
+        [
+          {
+            "node": "Business Owner Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Business Owner": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Business Owner Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Owner Agent": {
+      "main": [
+        [
+          {
+            "node": "Business Architect Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "CTO Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Business Architect": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Business Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI CTO": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "CTO Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 3A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CTO Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 3A",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Phase 3A": {
+      "main": [
+        [
+          {
+            "node": "Application Architect Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI App Architect": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Application Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Application Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Infrastructure Architect Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Infra Architect": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Infrastructure Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Infrastructure Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Project Manager Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI PM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Project Manager Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Project Manager Agent": {
+      "main": [
+        [
+          {
+            "node": "Solution Architect Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Solution Architect": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Solution Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solution Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Project Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Project Context": {
+      "main": [
+        [
+          {
+            "node": "Commit Requirements",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Compliance",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Business Canvas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Business Architecture",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Tech Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit Requirements": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit Compliance": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Commit Business Canvas": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 1",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Commit Business Architecture": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 1",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Commit Tech Recommendations": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 1",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Merge Commits 1": {
+      "main": [
+        [
+          {
+            "node": "Commit App Architecture",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Infra Architecture",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Implementation Plan",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit OAM Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit App Architecture": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit Infra Architecture": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Commit Implementation Plan": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 2",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Commit OAM Application": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 2",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge Commits 2": {
+      "main": [
+        [
+          {
+            "node": "Commit PRD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit PRD": {
+      "main": [
+        [
+          {
+            "node": "Send Completion Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Completion Notification": {
+      "main": [
+        [
+          {
+            "node": "Final Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Summary": {
+      "main": [
+        [
+          {
+            "node": "Response Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Router": {
+      "main": [
+        [
+          {
+            "node": "Progress: Complete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

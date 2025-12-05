@@ -1,0 +1,597 @@
+{
+  "name": "TOGAF Enterprise Delivery Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {
+          "title": "TOGAF Enterprise Delivery",
+          "subtitle": "Describe your project requirements to start the architecture process",
+          "responseMode": "streaming"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [0, 0],
+      "id": "chat-trigger",
+      "name": "Chat Trigger",
+      "webhookId": "togaf-delivery"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "You are a TOGAF-certified Enterprise Architecture workflow orchestrator. Your role is to:\n1. Parse the project input and extract: project name, domain, high-level requirements\n2. Generate a sanitized repository name (lowercase, hyphens, no spaces)\n3. Create initial project context JSON for downstream agents\n\nOutput ONLY valid JSON in this format:\n{\n  \"projectName\": \"Human readable project name\",\n  \"repositoryName\": \"lowercase-hyphenated-repo-name\",\n  \"domain\": \"e.g., Healthcare, Finance, Retail, Technology\",\n  \"initialRequirements\": \"Summarized requirements from input\",\n  \"stakeholders\": [\"list\", \"of\", \"stakeholders\"]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [300, 0],
+      "id": "orchestrator-agent",
+      "name": "Orchestrator Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [300, 200],
+      "id": "openai-orchestrator",
+      "name": "OpenAI Orchestrator"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.output }}\n\nAnalyze the above project context and create comprehensive requirements documentation in ArchiMate 3.1 XML format.\n\nInclude:\n- Stakeholder elements\n- Driver elements  \n- Goal elements\n- Requirement elements\n- Outcome elements\n- Assessment elements\n\nWith proper relationships between elements.",
+        "options": {
+          "systemMessage": "You are a Business Analyst expert in TOGAF ADM and ArchiMate 3.1. Your role is to:\n1. Elicit and document comprehensive requirements\n2. Create user stories and acceptance criteria\n3. Output ArchiMate Motivation layer elements (Stakeholder, Driver, Assessment, Goal, Outcome, Requirement)\n\nGenerate ArchiMate 3.1 compliant XML following Open Group Exchange Format:\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"requirements-model\">\n  <name>Requirements Model</name>\n  <elements>\n    <element identifier=\"stakeholder-1\" xsi:type=\"Stakeholder\"><name>...</name><documentation>...</documentation></element>\n    <element identifier=\"driver-1\" xsi:type=\"Driver\"><name>...</name></element>\n    <element identifier=\"goal-1\" xsi:type=\"Goal\"><name>...</name></element>\n    <element identifier=\"requirement-1\" xsi:type=\"Requirement\"><name>...</name></element>\n  </elements>\n  <relationships>\n    <relationship identifier=\"r1\" xsi:type=\"Association\" source=\"stakeholder-1\" target=\"driver-1\"/>\n  </relationships>\n</model>\n\nBe thorough. Include ALL requirements. Output ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [600, -150],
+      "id": "ba-agent",
+      "name": "BA Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [600, 50],
+      "id": "openai-ba",
+      "name": "OpenAI BA"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.output }}\n\nAnalyze the above project context and identify all applicable compliance requirements, regulations, and standards based on the domain. Output in ArchiMate 3.1 XML format.",
+        "options": {
+          "systemMessage": "You are a Compliance Officer with expertise in regulatory frameworks and ArchiMate 3.1. Your role is to:\n1. Identify applicable regulations based on domain (GDPR, HIPAA, SOX, PCI-DSS, ISO 27001, etc.)\n2. Map compliance requirements to ArchiMate Constraint elements\n3. Document standards and policies as Principle elements\n\nGenerate ArchiMate 3.1 XML with:\n- Constraint elements for regulations\n- Requirement elements for compliance requirements\n- Principle elements for standards\n- Relationships showing how constraints influence requirements\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"compliance-model\">\n  <name>Compliance Model</name>\n  <elements>\n    <element identifier=\"constraint-1\" xsi:type=\"Constraint\"><name>GDPR Article 17 - Right to Erasure</name><documentation>...</documentation></element>\n    <element identifier=\"principle-1\" xsi:type=\"Principle\"><name>Data Minimization</name></element>\n    <element identifier=\"requirement-c1\" xsi:type=\"Requirement\"><name>Personal Data Deletion Capability</name></element>\n  </elements>\n  <relationships>\n    <relationship identifier=\"r1\" xsi:type=\"Influence\" source=\"constraint-1\" target=\"requirement-c1\"/>\n  </relationships>\n</model>\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [600, 200],
+      "id": "compliance-agent",
+      "name": "Compliance Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [600, 400],
+      "id": "openai-compliance",
+      "name": "OpenAI Compliance"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [900, 0],
+      "id": "merge-phase1",
+      "name": "Merge Phase 1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nBased on the requirements and compliance analysis above, create a Business Model Canvas in ArchiMate 3.1 XML format covering value proposition, customer segments, channels, revenue streams, cost structure, key resources, and key activities.",
+        "options": {
+          "systemMessage": "You are a Business Owner creating a Business Model Canvas using ArchiMate 3.1. Your role is to:\n1. Document value proposition\n2. Map customer segments, channels, relationships\n3. Identify revenue streams and cost structure\n4. Create Resource and Capability elements\n\nGenerate ArchiMate XML for Strategy layer:\n- Value elements (value propositions)\n- Resource elements (key resources)\n- Capability elements (key activities)\n- Course of Action elements (strategies)\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"business-canvas-model\">\n  <name>Business Canvas Model</name>\n  <elements>\n    <element identifier=\"value-1\" xsi:type=\"Value\"><name>...</name><documentation>Value Proposition: ...</documentation></element>\n    <element identifier=\"capability-1\" xsi:type=\"Capability\"><name>...</name></element>\n    <element identifier=\"resource-1\" xsi:type=\"Resource\"><name>...</name></element>\n    <element identifier=\"coa-1\" xsi:type=\"CourseOfAction\"><name>...</name></element>\n  </elements>\n  <relationships>\n    <relationship identifier=\"r1\" xsi:type=\"Realization\" source=\"capability-1\" target=\"value-1\"/>\n  </relationships>\n</model>\n\nInclude relationships showing how resources enable capabilities. Output ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [1200, 0],
+      "id": "business-owner-agent",
+      "name": "Business Owner Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [1200, 200],
+      "id": "openai-business-owner",
+      "name": "OpenAI Business Owner"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate comprehensive business architecture in ArchiMate 3.1 XML format covering Motivation, Strategy, Capability (3 levels), and Business layers.",
+        "options": {
+          "systemMessage": "You are a Business Architect expert in TOGAF and ArchiMate 3.1. Create comprehensive business architecture:\n\nMOTIVATION LAYER:\n- Goals, Drivers, Assessments, Stakeholders, Requirements, Outcomes\n\nSTRATEGY LAYER:\n- Courses of Action for each Outcome\n- Resources enabling actions\n\nCAPABILITY MAP (3 levels):\n- Level 1: Strategic capabilities (3-5 high-level)\n- Level 2: Business capabilities (decomposition of L1)\n- Level 3: Operational capabilities (detailed, focus here)\n\nBUSINESS LAYER:\n- Business Processes realizing Level 3 capabilities\n- Business Functions, Roles, Actors\n- Business Objects\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"business-architecture-model\">\n  <name>Business Architecture Model</name>\n  <elements>\n    <!-- Capability elements with level indicators -->\n    <element identifier=\"cap-l1-1\" xsi:type=\"Capability\"><name>L1: ...</name></element>\n    <element identifier=\"cap-l2-1\" xsi:type=\"Capability\"><name>L2: ...</name></element>\n    <element identifier=\"cap-l3-1\" xsi:type=\"Capability\"><name>L3: ...</name></element>\n    <!-- Business Process elements -->\n    <element identifier=\"bp-1\" xsi:type=\"BusinessProcess\"><name>...</name></element>\n    <!-- Business Role/Actor elements -->\n    <element identifier=\"role-1\" xsi:type=\"BusinessRole\"><name>...</name></element>\n  </elements>\n  <relationships>\n    <relationship identifier=\"r1\" xsi:type=\"Composition\" source=\"cap-l1-1\" target=\"cap-l2-1\"/>\n    <relationship identifier=\"r2\" xsi:type=\"Realization\" source=\"bp-1\" target=\"cap-l3-1\"/>\n    <relationship identifier=\"r3\" xsi:type=\"Assignment\" source=\"role-1\" target=\"bp-1\"/>\n  </relationships>\n</model>\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [1500, -150],
+      "id": "business-architect-agent",
+      "name": "Business Architect Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [1500, 50],
+      "id": "openai-business-architect",
+      "name": "OpenAI Business Architect"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nProvide technology recommendations based on the business capabilities and requirements. Map specific technologies to capabilities with rationale in ArchiMate 3.1 XML format.",
+        "options": {
+          "systemMessage": "You are a CTO providing technology recommendations based on ArchiMate capability analysis. Your role is to:\n1. Review impacted capabilities from Business Architecture\n2. Map technology options to capabilities\n3. Recommend specific technologies with rationale\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"tech-recommendations\">\n  <name>Technology Recommendations</name>\n  <elements>\n    <element identifier=\"tech-1\" xsi:type=\"TechnologyService\"><name>Kubernetes</name><documentation>Rationale: Container orchestration for microservices deployment, enabling scalability and resilience.</documentation></element>\n    <element identifier=\"tech-2\" xsi:type=\"TechnologyService\"><name>PostgreSQL</name><documentation>Rationale: ACID-compliant relational database for transactional data.</documentation></element>\n    <element identifier=\"cap-ref-1\" xsi:type=\"Capability\"><name>Container Orchestration</name></element>\n  </elements>\n  <relationships>\n    <relationship identifier=\"r1\" xsi:type=\"Realization\" source=\"tech-1\" target=\"cap-ref-1\"/>\n  </relationships>\n</model>\n\nInclude documentation with rationale for each technology choice. Output ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [1500, 200],
+      "id": "cto-agent",
+      "name": "CTO Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [1500, 400],
+      "id": "openai-cto",
+      "name": "OpenAI CTO"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1800, 0],
+      "id": "merge-phase3a",
+      "name": "Merge Phase 3A"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate application architecture in ArchiMate 3.1 XML format based on the business architecture and technology recommendations.",
+        "options": {
+          "systemMessage": "You are an Application Architect creating ArchiMate 3.1 Application Architecture. Build upon Business Architecture inputs:\n\nAPPLICATION LAYER ELEMENTS:\n- Application Component (modular software units)\n- Application Service (externally visible behavior)\n- Application Interface (access points - APIs, UIs)\n- Application Function (internal behavior)\n- Data Object (passive data structures)\n\nRELATIONSHIPS:\n- Application Component realizes Application Service\n- Application Interface assigned to Application Component\n- Application Service serves Business Process\n- Flow relationships for data exchange\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"application-architecture-model\">\n  <name>Application Architecture Model</name>\n  <elements>\n    <element identifier=\"appcomp-1\" xsi:type=\"ApplicationComponent\"><name>User Service</name></element>\n    <element identifier=\"appservice-1\" xsi:type=\"ApplicationService\"><name>User Management</name></element>\n    <element identifier=\"appinterface-1\" xsi:type=\"ApplicationInterface\"><name>REST API - /users</name></element>\n    <element identifier=\"appfunc-1\" xsi:type=\"ApplicationFunction\"><name>Authenticate User</name></element>\n    <element identifier=\"dataobj-1\" xsi:type=\"DataObject\"><name>User Profile</name></element>\n  </elements>\n  <relationships>\n    <relationship identifier=\"r1\" xsi:type=\"Realization\" source=\"appcomp-1\" target=\"appservice-1\"/>\n    <relationship identifier=\"r2\" xsi:type=\"Assignment\" source=\"appinterface-1\" target=\"appcomp-1\"/>\n    <relationship identifier=\"r3\" xsi:type=\"Access\" source=\"appfunc-1\" target=\"dataobj-1\" accessType=\"readWrite\"/>\n  </relationships>\n</model>\n\nGenerate complete ArchiMate XML ensuring traceability to business layer elements. Output ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [2100, 0],
+      "id": "app-architect-agent",
+      "name": "Application Architect Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [2100, 200],
+      "id": "openai-app-architect",
+      "name": "OpenAI App Architect"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate infrastructure/technology architecture in ArchiMate 3.1 XML format based on the application architecture.",
+        "options": {
+          "systemMessage": "You are an Infrastructure Architect creating ArchiMate 3.1 Technology Architecture. Build upon Application Architecture:\n\nTECHNOLOGY LAYER ELEMENTS:\n- Node (computational resource - servers, VMs, containers)\n- Device (physical hardware)\n- System Software (OS, middleware, runtime)\n- Technology Service (externally visible tech behavior)\n- Technology Interface (access points)\n- Artifact (deployable units - JARs, Docker images)\n- Communication Network\n- Path (logical communication channel)\n\nRELATIONSHIPS:\n- Node realizes Application Component (deployment)\n- Artifact realizes Application Component\n- Technology Service serves Application Service\n- System Software assigned to Node\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"infrastructure-architecture-model\">\n  <name>Infrastructure Architecture Model</name>\n  <elements>\n    <element identifier=\"node-1\" xsi:type=\"Node\"><name>Kubernetes Cluster</name></element>\n    <element identifier=\"node-2\" xsi:type=\"Node\"><name>API Gateway Pod</name></element>\n    <element identifier=\"systemsw-1\" xsi:type=\"SystemSoftware\"><name>Ubuntu 22.04</name></element>\n    <element identifier=\"artifact-1\" xsi:type=\"Artifact\"><name>user-service:latest</name></element>\n    <element identifier=\"network-1\" xsi:type=\"CommunicationNetwork\"><name>Internal VPC</name></element>\n    <element identifier=\"techservice-1\" xsi:type=\"TechnologyService\"><name>Container Runtime</name></element>\n  </elements>\n  <relationships>\n    <relationship identifier=\"r1\" xsi:type=\"Realization\" source=\"node-2\" target=\"appcomp-1\"/>\n    <relationship identifier=\"r2\" xsi:type=\"Assignment\" source=\"systemsw-1\" target=\"node-1\"/>\n  </relationships>\n</model>\n\nGenerate deployment-ready ArchiMate XML. Output ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [2400, 0],
+      "id": "infra-architect-agent",
+      "name": "Infrastructure Architect Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [2400, 200],
+      "id": "openai-infra-architect",
+      "name": "OpenAI Infra Architect"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate implementation and migration planning in ArchiMate 3.1 XML format. Also compile a PRD summary document.",
+        "options": {
+          "systemMessage": "You are a Project Manager creating TOGAF Implementation & Migration Architecture. Your role is to:\n\nIMPLEMENTATION LAYER ELEMENTS:\n- Work Package (deliverables and tasks)\n- Implementation Event (milestones)\n- Plateau (transition architecture states)\n- Gap (difference between baseline and target)\n- Deliverable (concrete outputs)\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"implementation-plan-model\">\n  <name>Implementation Plan Model</name>\n  <elements>\n    <element identifier=\"plateau-0\" xsi:type=\"Plateau\"><name>Current State (Baseline)</name></element>\n    <element identifier=\"plateau-1\" xsi:type=\"Plateau\"><name>Phase 1: Foundation</name></element>\n    <element identifier=\"plateau-2\" xsi:type=\"Plateau\"><name>Phase 2: Core Features</name></element>\n    <element identifier=\"plateau-3\" xsi:type=\"Plateau\"><name>Target State</name></element>\n    <element identifier=\"gap-1\" xsi:type=\"Gap\"><name>Infrastructure Gap</name></element>\n    <element identifier=\"wp-1\" xsi:type=\"WorkPackage\"><name>Setup Cloud Infrastructure</name></element>\n    <element identifier=\"event-1\" xsi:type=\"ImplementationEvent\"><name>Milestone: Infrastructure Ready</name></element>\n    <element identifier=\"deliverable-1\" xsi:type=\"Deliverable\"><name>Deployment Pipeline</name></element>\n  </elements>\n  <relationships>\n    <relationship identifier=\"r1\" xsi:type=\"Triggering\" source=\"plateau-0\" target=\"plateau-1\"/>\n    <relationship identifier=\"r2\" xsi:type=\"Realization\" source=\"wp-1\" target=\"deliverable-1\"/>\n  </relationships>\n</model>\n\nAfter the XML, also output a PRD SUMMARY in markdown format covering:\n1. Executive Summary\n2. Requirements Summary\n3. Compliance Requirements\n4. Business Value\n5. Architecture Overview\n6. Technology Stack\n7. Implementation Roadmap"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [2700, 0],
+      "id": "pm-agent",
+      "name": "Project Manager Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [2700, 200],
+      "id": "openai-pm",
+      "name": "OpenAI PM"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate detailed solution architecture transforming the conceptual application architecture into logical design. Also provide the final enriched PRD.",
+        "options": {
+          "systemMessage": "You are a Solution Architect creating detailed logical architecture from conceptual application architecture. Your role is to:\n\n1. Transform conceptual to logical design\n2. Add implementation details\n3. Define API contracts, data models, security controls\n4. Create deployment specifications\n\nDETAILED OUTPUTS:\n- Refined Application Components with technology bindings\n- API specifications (endpoints, methods, payloads)\n- Data models and schemas\n- Security architecture elements\n- Integration patterns\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" identifier=\"solution-architecture-model\">\n  <name>Solution Architecture Model</name>\n  <documentation>\n    API SPECIFICATIONS:\n    - POST /api/v1/users - Create user\n    - GET /api/v1/users/{id} - Get user\n    \n    DATA MODELS:\n    - User: {id, email, name, roles[], createdAt, updatedAt}\n    \n    SECURITY:\n    - JWT-based authentication\n    - Role-based access control\n  </documentation>\n  <elements>\n    <!-- Refined components with implementation details -->\n  </elements>\n  <relationships>...</relationships>\n</model>\n\nAfter the XML, output the FINAL ENRICHED PRD in markdown with:\n1. Executive Summary\n2. Detailed Requirements with acceptance criteria\n3. Compliance Matrix\n4. Business Value & ROI\n5. Complete Architecture (all layers)\n6. Technology Stack with versions\n7. API Specifications\n8. Data Models\n9. Security Architecture\n10. Implementation Roadmap with milestones\n11. Risk Register\n12. Success Metrics"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [3000, 0],
+      "id": "solution-architect-agent",
+      "name": "Solution Architect Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [3000, 200],
+      "id": "openai-solution-architect",
+      "name": "OpenAI Solution Architect"
+    }
+  ],
+  "connections": {
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Orchestrator Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Orchestrator": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Orchestrator Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Orchestrator Agent": {
+      "main": [
+        [
+          {
+            "node": "BA Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Compliance Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI BA": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "BA Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Compliance": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Compliance Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BA Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Phase 1": {
+      "main": [
+        [
+          {
+            "node": "Business Owner Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Business Owner": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Business Owner Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Owner Agent": {
+      "main": [
+        [
+          {
+            "node": "Business Architect Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "CTO Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Business Architect": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Business Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI CTO": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "CTO Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 3A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CTO Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 3A",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Phase 3A": {
+      "main": [
+        [
+          {
+            "node": "Application Architect Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI App Architect": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Application Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Application Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Infrastructure Architect Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Infra Architect": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Infrastructure Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Infrastructure Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Project Manager Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI PM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Project Manager Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Project Manager Agent": {
+      "main": [
+        [
+          {
+            "node": "Solution Architect Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Solution Architect": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Solution Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

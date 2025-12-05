@@ -1,0 +1,228 @@
+{
+  "name": "TOGAF Slack Listener",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "slack-events",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 100],
+      "id": "webhook-slack-events",
+      "name": "Slack Events Webhook",
+      "webhookId": "slack-events-togaf"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-challenge",
+              "leftValue": "={{ $json.body.challenge }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [450, 100],
+      "id": "if-challenge",
+      "name": "Is Challenge?"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.body.challenge }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [700, -50],
+      "id": "respond-challenge",
+      "name": "Respond Challenge"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "condition-repo-ready",
+              "leftValue": "={{ $json.body.event.text }}",
+              "rightValue": "Repositories created/updated",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, 200],
+      "id": "if-repo-ready",
+      "name": "IF Repo Ready"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [950, 100],
+      "id": "respond-ok",
+      "name": "Respond OK"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract repo name from Slack message\nconst event = $input.first().json.body.event || {};\nconst text = event.text || '';\n\n// Try multiple patterns to find the repo name\nlet repoName = null;\n\n// Pattern 1: \"Resource: repo-name\"\nconst resourceMatch = text.match(/Resource:\\s*_?([\\w-]+)_?/i);\nif (resourceMatch) {\n  repoName = resourceMatch[1];\n}\n\n// Pattern 2: \"microservice | repo-name\" (from the emoji header)\nif (!repoName) {\n  const headerMatch = text.match(/microservice\\s*\\|\\s*_?([\\w-]+)_?/i);\n  if (headerMatch) {\n    repoName = headerMatch[1];\n  }\n}\n\n// If no repo name found, return empty to stop the flow\nif (!repoName) {\n  console.log('No repo name found in message:', text);\n  return [];\n}\n\n// Clean up the repo name (remove any trailing punctuation and underscores)\nrepoName = repoName.replace(/[.,;:!?_]+$/, '').replace(/^_+/, '');\n\nreturn [{\n  json: {\n    repositoryName: repoName,\n    originalMessage: text,\n    channel: event.channel,\n    user: event.user,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [950, 300],
+      "id": "extract-repo-name",
+      "name": "Extract Repo Name"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://n8n.srv1157352.hstgr.cloud/webhook-waiting/togaf-resume-{{ $json.repositoryName }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"repositoryName\": \"{{ $json.repositoryName }}\",\n  \"status\": \"ready\",\n  \"timestamp\": \"{{ $json.timestamp }}\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300],
+      "id": "resume-main-workflow",
+      "name": "Resume Main Workflow"
+    },
+    {
+      "parameters": {
+        "content": "## TOGAF Slack Listener (Webhook-based)\n\n### Request URL for Slack Event Subscriptions:\n`https://n8n.srv1157352.hstgr.cloud/webhook/slack-events`\n\n### Flow:\n1. **Slack Events Webhook** - Receives all Slack events\n2. **Is Challenge?** - Handles Slack URL verification\n3. **IF Repo Ready** - Filters for repo creation messages\n4. **Extract Repo Name** - Parses the repo name\n5. **Resume Main Workflow** - Triggers the waiting TOGAF workflow\n\n### Bot Events to Subscribe:\n- `message.channels`\n\n### Channel:\n- ID: C0952L4JNHH (#all-internal-developer-platform)",
+        "height": 360,
+        "width": 350
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-150, -50],
+      "id": "instructions",
+      "name": "Instructions"
+    }
+  ],
+  "connections": {
+    "Slack Events Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is Challenge?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Challenge?": {
+      "main": [
+        [
+          {
+            "node": "Respond Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF Repo Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Repo Ready": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Repo Name",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Repo Name": {
+      "main": [
+        [
+          {
+            "node": "Resume Main Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "244d8833-64cd-4c70-87bd-852ca0446102",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
