@@ -1,0 +1,1755 @@
+{
+  "name": "TOGAF Slack Listener v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "togaf-architect-v2",
+        "authentication": "headerAuth",
+        "responseMode": "streaming",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -11216,
+        -832
+      ],
+      "id": "webhook-v2",
+      "name": "Webhook v2",
+      "webhookId": "togaf-architect-v2-webhook",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "yOVwvCcrN3rQmwXe",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize input from Webhook Trigger\nconst inputData = $input.first().json;\n\n// Extract chatInput from POST body\nlet chatInput = '';\nlet triggerSource = 'webhook';\n\nif (inputData.body && inputData.body.chatInput) {\n  chatInput = inputData.body.chatInput;\n} else if (inputData.chatInput) {\n  chatInput = inputData.chatInput;\n}\n\nreturn {\n  json: {\n    chatInput,\n    triggerSource,\n    originalData: inputData\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -11024,
+        -784
+      ],
+      "id": "input-normalizer-v2",
+      "name": "Input Normalizer"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}\n\nAnalyze this user request and extract the service/project details.",
+        "options": {
+          "systemMessage": "You are a service naming expert. Your job is to analyze user requests and extract a proper microservice name and parameters.\n\nAnalyze the user's input and extract:\n1. **serviceName**: A concise, descriptive name for the microservice (e.g., \"patient-scheduler\", \"inventory-api\", \"auth-service\")\n2. **projectName**: A human-readable project title\n3. **domain**: The business domain (e.g., Healthcare, Finance, Retail, E-commerce, IoT, etc.)\n4. **language**: Programming language to use (default: \"python\", options: python, nodejs, go, java)\n5. **description**: A one-sentence description of what the service does\n\nRules for serviceName:\n- Use lowercase letters, numbers, and hyphens only\n- No spaces or special characters\n- Keep it short (max 40 characters)\n- Make it descriptive but concise\n\nOutput ONLY valid JSON in this exact format:\n{\n  \"serviceName\": \"example-service-name\",\n  \"projectName\": \"Human Readable Project Name\",\n  \"domain\": \"Domain\",\n  \"language\": \"python\",\n  \"description\": \"Brief description of the service\"\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -10880,
+        -784
+      ],
+      "id": "service-name-agent-v2",
+      "name": "Service Name Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the AI agent output and prepare for downstream nodes\nconst agentOutput = $input.first().json.output || '{}';\nconst triggerSource = $('Input Normalizer').first().json.triggerSource || 'chat';\nconst chatInput = $('Input Normalizer').first().json.chatInput || '';\n\nlet parsed = {};\ntry {\n  const jsonMatch = agentOutput.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  }\n} catch (e) {\n  parsed = {\n    serviceName: 'default-service',\n    projectName: 'Default Project',\n    domain: 'Technology',\n    language: 'python',\n    description: 'Auto-generated service'\n  };\n}\n\nlet repoName = (parsed.serviceName || 'service')\n  .toLowerCase()\n  .replace(/[^a-z0-9-]/g, '-')\n  .replace(/-+/g, '-')\n  .replace(/^-|-$/g, '')\n  .substring(0, 40);\n\nrepoName = repoName + '-' + Date.now().toString().slice(-6);\n\nconst statusLog = ['Starting TOGAF Enterprise Architecture Process'];\n\nreturn {\n  json: {\n    chatInput,\n    projectName: parsed.projectName || 'New Project',\n    repositoryName: repoName,\n    serviceName: parsed.serviceName,\n    domain: parsed.domain || 'Technology',\n    language: parsed.language || 'python',\n    description: parsed.description || '',\n    triggerSource,\n    statusLog,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10576,
+        -784
+      ],
+      "id": "parse-service-name-v2",
+      "name": "Parse Service Name"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Store context for later retrieval by Slack listener\nconst staticData = $getWorkflowStaticData('global');\nstaticData.pendingRequests = staticData.pendingRequests || {};\n\n// Get data from Parse Service Name node (not from Slack response)\nconst parseData = $('Parse Service Name').first().json;\nconst repoName = parseData.repositoryName;\n\nstaticData.pendingRequests[repoName] = {\n  chatInput: parseData.chatInput,\n  projectName: parseData.projectName,\n  repositoryName: parseData.repositoryName,\n  domain: parseData.domain,\n  language: parseData.language,\n  description: parseData.description,\n  triggerSource: parseData.triggerSource || 'webhook',\n  timestamp: new Date().toISOString()\n};\n\nconsole.log('Stored context for:', repoName);\n\n// Pass through the project data for Create Microservice\nreturn { json: parseData };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10416,
+        -784
+      ],
+      "id": "store-context-v2",
+      "name": "Store Context"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://slack-api-server.default.20.233.105.82.nip.io/slack/command",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "string",
+        "body": "=command=/microservice&text=create {{ $json.repositoryName }} {{ $json.language }}&user_id=U_N8N_WORKFLOW&user_name=n8n-workflow&channel_id=C0952L4JNHH&channel_name=all-internal-developer-platform&team_id=T0952L48VFV&team_domain=healthservice",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -10256,
+        -784
+      ],
+      "id": "create-microservice-v2",
+      "name": "Create Microservice"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-5-20250929",
+          "cachedResultName": "Claude Sonnet 4.5"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        -9936,
+        -544
+      ],
+      "id": "anthropic-model-v2",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": "ZDKMG38FCieXOBKt",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "slack-events",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -11328,
+        64
+      ],
+      "id": "slack-events-webhook-v2",
+      "name": "Slack Events Webhook v2",
+      "webhookId": "slack-events-togaf-v2",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-challenge",
+              "leftValue": "={{ $json.body.challenge }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -11088,
+        64
+      ],
+      "id": "is-challenge-v2",
+      "name": "Is Challenge?"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.body.challenge }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -10832,
+        -96
+      ],
+      "id": "respond-challenge-v2",
+      "name": "Respond Challenge"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "condition-repo-ready-text",
+              "leftValue": "={{ $json.body.event.text }}",
+              "rightValue": "Repositories created/updated",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "condition-repo-ready-attachment",
+              "leftValue": "={{ $json.body.event.attachments?.[0]?.text }}",
+              "rightValue": "Repositories created/updated",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -10832,
+        160
+      ],
+      "id": "if-repo-ready-v2",
+      "name": "IF Repo Ready"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -10576,
+        64
+      ],
+      "id": "respond-ok-v2",
+      "name": "Respond OK"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract repo name from Slack message\nconst event = $input.first().json.body.event || {};\nlet text = event.text || '';\n\nif (!text && event.attachments && event.attachments.length > 0) {\n  const attachment = event.attachments[0];\n  text = (attachment.text || '') + ' ' + (attachment.title || '') + ' ' + (attachment.fallback || '');\n}\n\nlet repoName = null;\n\nconst resourceMatch = text.match(/Resource:\\s*_?([\\w-]+)_?/i);\nif (resourceMatch) {\n  repoName = resourceMatch[1];\n}\n\nif (!repoName) {\n  const headerMatch = text.match(/microservice\\s*\\|\\s*_?([\\w-]+)_?/i);\n  if (headerMatch) {\n    repoName = headerMatch[1];\n  }\n}\n\nif (!repoName) {\n  console.log('No repo name found in message:', text);\n  return [];\n}\n\nrepoName = repoName.replace(/[.,;:!?_]+$/, '').replace(/^_+/, '');\n\nreturn [{\n  json: {\n    repositoryName: repoName,\n    originalMessage: text,\n    channel: event.channel,\n    user: event.user,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10576,
+        256
+      ],
+      "id": "extract-repo-name-v2",
+      "name": "Extract Repo Name"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Retrieve stored context from initiator flow\nconst staticData = $getWorkflowStaticData('global');\nconst repoName = $json.repositoryName;\n\nconst context = staticData.pendingRequests?.[repoName];\nif (!context) {\n  console.log('No pending request for:', repoName);\n  return [];\n}\n\nconst timestamp = new Date(context.timestamp);\nconst now = new Date();\nconst hourInMs = 60 * 60 * 1000;\nif (now - timestamp > hourInMs) {\n  console.log('Context expired for:', repoName);\n  delete staticData.pendingRequests[repoName];\n  return [];\n}\n\ndelete staticData.pendingRequests[repoName];\nconsole.log('Retrieved context for:', repoName);\n\nreturn {\n  json: {\n    ...context,\n    repoConfirmed: true,\n    slackEventReceived: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10336,
+        256
+      ],
+      "id": "retrieve-context-v2",
+      "name": "Retrieve Context"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Project: {{ $('Retrieve Context').item.json.projectName }}\nRepository: {{ $('Retrieve Context').item.json.repositoryName }}\nDomain: {{ $('Retrieve Context').item.json.domain }}\nLanguage: {{ $('Retrieve Context').item.json.language }}\nDescription: {{ $('Retrieve Context').item.json.description }}\n\nOriginal Requirements:\n{{ $('Retrieve Context').item.json.chatInput }}",
+        "options": {
+          "systemMessage": "You are a TOGAF Enterprise Architect Orchestrator. Your role is to analyze the project requirements and create a comprehensive project context document that will guide all subsequent architecture work.\n\nBased on the input, produce a JSON document with:\n1. projectOverview: High-level summary of the project\n2. businessContext: Business drivers and objectives\n3. stakeholders: Key stakeholders and their concerns\n4. constraints: Technical and business constraints\n5. assumptions: Key assumptions being made\n6. architecturePrinciples: Relevant TOGAF principles to apply\n7. scopeDefinition: What's in and out of scope\n\nOutput valid JSON only."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -10096,
+        256
+      ],
+      "id": "slack-orchestrator-v2",
+      "name": "Slack Orchestrator Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Slack Orchestrator Agent').item.json.output }}\n\n## TASK: Research and Document Requirements\n\nYou are a Business Analyst. Your task is to:\n1. Research the topic using web search to understand gold-standard solutions\n2. Make reasonable assumptions about what the user needs\n3. Create comprehensive requirements documentation\n\n## OUTPUT FORMAT\nOutput a Markdown requirements document (requirements.md) with:\n\n# Requirements Specification: [Project Name]\n\n## Executive Summary\n[Brief overview of the solution based on research]\n\n## Gold Standard Reference\n[What industry-leading solutions look like for this type of project]\n\n## Functional Requirements\n[FR-001] [Requirement name]: [Description]\n[FR-002] ...\n\n## Non-Functional Requirements\n[NFR-001] Performance: [Description]\n[NFR-002] Security: [Description]\n[NFR-003] Scalability: [Description]\n\n## User Stories\n- As a [user type], I want to [action] so that [benefit]\n\n## Acceptance Criteria\n[Specific, testable criteria]\n\n## Assumptions Made\n[List all assumptions you made to proceed]\n\n## Recommended Approach\n[Your recommended solution approach based on research]\n\nOutput ONLY the markdown document.",
+        "options": {
+          "systemMessage": "You are an expert Business Analyst with deep knowledge of software architecture and industry best practices.\n\nYour approach:\n1. RESEARCH FIRST: Think about what gold-standard solutions exist for this type of project. Consider industry leaders and proven patterns.\n2. MAKE ASSUMPTIONS: Users often don't know exactly what they want. Make reasonable assumptions based on the domain and common requirements. Document these assumptions clearly.\n3. BE COMPREHENSIVE: Include all requirements that a production-ready system would need, even if not explicitly requested.\n4. AUTO-PROCEED: Do not ask questions. Make the best decision and document your reasoning.\n\nDomain Expertise:\n- Healthcare: HIPAA, HL7/FHIR, patient privacy, audit trails\n- Finance: PCI-DSS, SOX compliance, transaction integrity\n- E-commerce: Payment processing, inventory, cart management\n- IoT: Device management, telemetry, edge computing\n- General: Authentication, authorization, logging, monitoring\n\nAlways include:\n- Performance requirements (response times, throughput)\n- Security requirements (authentication, encryption, audit)\n- Scalability considerations\n- Error handling and recovery\n- Monitoring and observability\n\nOutput format: Markdown document suitable for a PRD."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -9136,
+        96
+      ],
+      "id": "ba-agent-v2",
+      "name": "BA Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Slack Orchestrator Agent').item.json.output }}\n\nAnalyze the above project context and identify all applicable compliance requirements, regulations, and standards based on the domain. Output in Archi-compatible .archimate XML format.",
+        "options": {
+          "systemMessage": "You are a Compliance Officer with expertise in regulatory frameworks. Your role is to:\n1. Identify applicable regulations based on domain (GDPR, HIPAA, SOX, PCI-DSS, ISO 27001, etc.)\n2. Map compliance requirements to ArchiMate Constraint elements\n3. Document standards and policies as Principle elements\n\nGenerate Archi-native .archimate XML format (NOT Open Group Exchange Format):\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<archimate:model xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:archimate=\"http://www.archimatetool.com/archimate\" name=\"Compliance Model\" id=\"compliance-model\" version=\"5.0.0\">\n  <folder name=\"Motivation\" id=\"motivation-folder\" type=\"motivation\">\n    <element xsi:type=\"archimate:Constraint\" name=\"GDPR Article 17\" id=\"constraint-1\">\n      <documentation>Right to erasure requirement</documentation>\n    </element>\n    <element xsi:type=\"archimate:Principle\" name=\"Data Minimization\" id=\"principle-1\"/>\n    <element xsi:type=\"archimate:Requirement\" name=\"Personal Data Deletion\" id=\"req-1\"/>\n  </folder>\n  <folder name=\"Relations\" id=\"relations-folder\" type=\"relations\">\n    <element xsi:type=\"archimate:InfluenceRelationship\" id=\"rel-1\" source=\"constraint-1\" target=\"req-1\"/>\n  </folder>\n  <folder name=\"Views\" id=\"views-folder\" type=\"diagrams\"/>\n  <purpose>Compliance requirements and regulations</purpose>\n</archimate:model>\n\nIMPORTANT:\n- Use xmlns:archimate=\"http://www.archimatetool.com/archimate\" (NOT opengroup.org)\n- Root element is <archimate:model>\n- Elements use xsi:type=\"archimate:ElementName\" format\n- Use folder structure with type attributes\n- Include version=\"5.0.0\" attribute\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -9264,
+        512
+      ],
+      "id": "compliance-agent-v2",
+      "name": "Compliance Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -8832,
+        256
+      ],
+      "id": "merge-phase-1-v2",
+      "name": "Merge Phase 1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nBased on the requirements and compliance analysis above, create a Business Model Canvas in Archi-compatible .archimate XML format.",
+        "options": {
+          "systemMessage": "You are a Business Owner creating a Business Model Canvas using ArchiMate. Your role is to:\n1. Document value proposition\n2. Map customer segments, channels, relationships\n3. Identify revenue streams and cost structure\n4. Create Resource and Capability elements\n\nGenerate Archi-native .archimate XML format:\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<archimate:model xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:archimate=\"http://www.archimatetool.com/archimate\" name=\"Business Canvas Model\" id=\"business-canvas-model\" version=\"5.0.0\">\n  <folder name=\"Strategy\" id=\"strategy-folder\" type=\"strategy\">\n    <element xsi:type=\"archimate:Value\" name=\"Value Proposition\" id=\"value-1\">\n      <documentation>Description of value</documentation>\n    </element>\n    <element xsi:type=\"archimate:Resource\" name=\"Key Resource\" id=\"resource-1\"/>\n    <element xsi:type=\"archimate:Capability\" name=\"Key Capability\" id=\"cap-1\"/>\n    <element xsi:type=\"archimate:CourseOfAction\" name=\"Strategy\" id=\"coa-1\"/>\n  </folder>\n  <folder name=\"Relations\" id=\"relations-folder\" type=\"relations\"/>\n  <folder name=\"Views\" id=\"views-folder\" type=\"diagrams\"/>\n  <purpose>Business Model Canvas</purpose>\n</archimate:model>\n\nIMPORTANT:\n- Use xmlns:archimate=\"http://www.archimatetool.com/archimate\"\n- Root element is <archimate:model>\n- Elements use xsi:type=\"archimate:ElementName\" format\n- Include version=\"5.0.0\" attribute\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -8528,
+        256
+      ],
+      "id": "business-owner-v2",
+      "name": "Business Owner Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate comprehensive business architecture in Archi-compatible .archimate XML format.",
+        "options": {
+          "systemMessage": "You are a Business Architect expert in TOGAF and ArchiMate. Create comprehensive business architecture including:\n- Motivation Layer (Goals, Drivers, Assessments)\n- Strategy Layer (Courses of Action, Resources)\n- Business Layer (Processes, Functions, Roles, Actors)\n\nGenerate Archi-native .archimate XML format:\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<archimate:model xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:archimate=\"http://www.archimatetool.com/archimate\" name=\"Business Architecture Model\" id=\"business-arch-model\" version=\"5.0.0\">\n  <folder name=\"Motivation\" id=\"motivation-folder\" type=\"motivation\">\n    <element xsi:type=\"archimate:Goal\" name=\"Business Goal\" id=\"goal-1\"/>\n    <element xsi:type=\"archimate:Driver\" name=\"Business Driver\" id=\"driver-1\"/>\n    <element xsi:type=\"archimate:Stakeholder\" name=\"Key Stakeholder\" id=\"stakeholder-1\"/>\n  </folder>\n  <folder name=\"Strategy\" id=\"strategy-folder\" type=\"strategy\">\n    <element xsi:type=\"archimate:Capability\" name=\"Business Capability\" id=\"cap-1\"/>\n    <element xsi:type=\"archimate:Resource\" name=\"Business Resource\" id=\"res-1\"/>\n  </folder>\n  <folder name=\"Business\" id=\"business-folder\" type=\"business\">\n    <element xsi:type=\"archimate:BusinessActor\" name=\"Actor\" id=\"actor-1\"/>\n    <element xsi:type=\"archimate:BusinessRole\" name=\"Role\" id=\"role-1\"/>\n    <element xsi:type=\"archimate:BusinessProcess\" name=\"Process\" id=\"process-1\"/>\n    <element xsi:type=\"archimate:BusinessFunction\" name=\"Function\" id=\"func-1\"/>\n    <element xsi:type=\"archimate:BusinessService\" name=\"Service\" id=\"service-1\"/>\n  </folder>\n  <folder name=\"Relations\" id=\"relations-folder\" type=\"relations\">\n    <element xsi:type=\"archimate:AssignmentRelationship\" id=\"rel-1\" source=\"actor-1\" target=\"role-1\"/>\n  </folder>\n  <folder name=\"Views\" id=\"views-folder\" type=\"diagrams\"/>\n  <purpose>Business Architecture</purpose>\n</archimate:model>\n\nIMPORTANT:\n- Use xmlns:archimate=\"http://www.archimatetool.com/archimate\"\n- Root element is <archimate:model>\n- Elements use xsi:type=\"archimate:ElementName\" format\n- Include version=\"5.0.0\" attribute\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -8224,
+        96
+      ],
+      "id": "business-architect-v2",
+      "name": "Business Architect Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nProvide technology recommendations in Archi-compatible .archimate XML format.",
+        "options": {
+          "systemMessage": "You are a CTO providing technology recommendations based on capability analysis.\n\nGenerate Archi-native .archimate XML format:\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<archimate:model xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:archimate=\"http://www.archimatetool.com/archimate\" name=\"Technology Recommendations\" id=\"tech-rec-model\" version=\"5.0.0\">\n  <folder name=\"Technology &amp; Physical\" id=\"technology-folder\" type=\"technology\">\n    <element xsi:type=\"archimate:TechnologyService\" name=\"Cloud Platform\" id=\"tech-1\">\n      <documentation>Rationale for technology choice</documentation>\n    </element>\n    <element xsi:type=\"archimate:SystemSoftware\" name=\"Container Runtime\" id=\"sys-1\"/>\n    <element xsi:type=\"archimate:Node\" name=\"Kubernetes Cluster\" id=\"node-1\"/>\n  </folder>\n  <folder name=\"Relations\" id=\"relations-folder\" type=\"relations\"/>\n  <folder name=\"Views\" id=\"views-folder\" type=\"diagrams\"/>\n  <purpose>Technology Recommendations</purpose>\n</archimate:model>\n\nIMPORTANT:\n- Use xmlns:archimate=\"http://www.archimatetool.com/archimate\"\n- Root element is <archimate:model>\n- Include documentation with rationale for each technology choice\n- Include version=\"5.0.0\" attribute\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -8224,
+        416
+      ],
+      "id": "cto-agent-v2",
+      "name": "CTO Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -7920,
+        256
+      ],
+      "id": "merge-phase-3a-v2",
+      "name": "Merge Phase 3A"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate application architecture in Archi-compatible .archimate XML format.",
+        "options": {
+          "systemMessage": "You are an Application Architect creating ArchiMate Application Architecture.\n\nGenerate Archi-native .archimate XML format:\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<archimate:model xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:archimate=\"http://www.archimatetool.com/archimate\" name=\"Application Architecture Model\" id=\"app-arch-model\" version=\"5.0.0\">\n  <folder name=\"Application\" id=\"application-folder\" type=\"application\">\n    <element xsi:type=\"archimate:ApplicationComponent\" name=\"API Gateway\" id=\"comp-1\">\n      <documentation>Description of component</documentation>\n    </element>\n    <element xsi:type=\"archimate:ApplicationService\" name=\"REST API\" id=\"svc-1\"/>\n    <element xsi:type=\"archimate:ApplicationInterface\" name=\"HTTP Endpoint\" id=\"iface-1\"/>\n    <element xsi:type=\"archimate:DataObject\" name=\"Entity\" id=\"data-1\"/>\n  </folder>\n  <folder name=\"Relations\" id=\"relations-folder\" type=\"relations\">\n    <element xsi:type=\"archimate:ServingRelationship\" id=\"rel-1\" source=\"comp-1\" target=\"svc-1\"/>\n    <element xsi:type=\"archimate:AccessRelationship\" id=\"rel-2\" source=\"comp-1\" target=\"data-1\"/>\n  </folder>\n  <folder name=\"Views\" id=\"views-folder\" type=\"diagrams\"/>\n  <purpose>Application Architecture</purpose>\n</archimate:model>\n\nIMPORTANT:\n- Use xmlns:archimate=\"http://www.archimatetool.com/archimate\"\n- Root element is <archimate:model>\n- Elements use xsi:type=\"archimate:ElementName\" format\n- Include version=\"5.0.0\" attribute\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -7616,
+        256
+      ],
+      "id": "app-architect-v2",
+      "name": "Application Architect Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate infrastructure/technology architecture in Archi-compatible .archimate XML format.",
+        "options": {
+          "systemMessage": "You are an Infrastructure Architect creating ArchiMate Technology Architecture.\n\nGenerate Archi-native .archimate XML format:\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<archimate:model xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:archimate=\"http://www.archimatetool.com/archimate\" name=\"Infrastructure Architecture Model\" id=\"infra-arch-model\" version=\"5.0.0\">\n  <folder name=\"Technology &amp; Physical\" id=\"technology-folder\" type=\"technology\">\n    <element xsi:type=\"archimate:Node\" name=\"Kubernetes Node\" id=\"node-1\">\n      <documentation>Description</documentation>\n    </element>\n    <element xsi:type=\"archimate:Device\" name=\"Server\" id=\"device-1\"/>\n    <element xsi:type=\"archimate:SystemSoftware\" name=\"Container Runtime\" id=\"sys-1\"/>\n    <element xsi:type=\"archimate:TechnologyService\" name=\"Load Balancer\" id=\"tech-svc-1\"/>\n    <element xsi:type=\"archimate:CommunicationNetwork\" name=\"VPC Network\" id=\"net-1\"/>\n    <element xsi:type=\"archimate:Artifact\" name=\"Container Image\" id=\"artifact-1\"/>\n  </folder>\n  <folder name=\"Relations\" id=\"relations-folder\" type=\"relations\">\n    <element xsi:type=\"archimate:AssignmentRelationship\" id=\"rel-1\" source=\"node-1\" target=\"sys-1\"/>\n  </folder>\n  <folder name=\"Views\" id=\"views-folder\" type=\"diagrams\"/>\n  <purpose>Infrastructure Architecture</purpose>\n</archimate:model>\n\nIMPORTANT:\n- Use xmlns:archimate=\"http://www.archimatetool.com/archimate\"\n- Root element is <archimate:model>\n- Elements use xsi:type=\"archimate:ElementName\" format\n- Include version=\"5.0.0\" attribute\n\nOutput ONLY the XML."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -7312,
+        256
+      ],
+      "id": "infra-architect-v2",
+      "name": "Infrastructure Architect Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nCreate implementation and migration planning in Archi-compatible .archimate XML format. Also compile a PRD summary document.",
+        "options": {
+          "systemMessage": "You are a Project Manager creating TOGAF Implementation & Migration Architecture.\n\nGenerate Archi-native .archimate XML format:\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<archimate:model xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:archimate=\"http://www.archimatetool.com/archimate\" name=\"Implementation Plan Model\" id=\"impl-plan-model\" version=\"5.0.0\">\n  <folder name=\"Implementation &amp; Migration\" id=\"impl-folder\" type=\"implementation_migration\">\n    <element xsi:type=\"archimate:WorkPackage\" name=\"Phase 1: Foundation\" id=\"wp-1\">\n      <documentation>Description of work package</documentation>\n    </element>\n    <element xsi:type=\"archimate:WorkPackage\" name=\"Phase 2: Development\" id=\"wp-2\"/>\n    <element xsi:type=\"archimate:WorkPackage\" name=\"Phase 3: Deployment\" id=\"wp-3\"/>\n    <element xsi:type=\"archimate:Deliverable\" name=\"MVP Release\" id=\"del-1\"/>\n    <element xsi:type=\"archimate:ImplementationEvent\" name=\"Go Live\" id=\"event-1\"/>\n    <element xsi:type=\"archimate:Plateau\" name=\"Current State\" id=\"plateau-1\"/>\n    <element xsi:type=\"archimate:Plateau\" name=\"Target State\" id=\"plateau-2\"/>\n    <element xsi:type=\"archimate:Gap\" name=\"Gap Analysis\" id=\"gap-1\"/>\n  </folder>\n  <folder name=\"Relations\" id=\"relations-folder\" type=\"relations\">\n    <element xsi:type=\"archimate:TriggeringRelationship\" id=\"rel-1\" source=\"wp-1\" target=\"wp-2\"/>\n    <element xsi:type=\"archimate:RealizationRelationship\" id=\"rel-2\" source=\"wp-3\" target=\"del-1\"/>\n  </folder>\n  <folder name=\"Views\" id=\"views-folder\" type=\"diagrams\"/>\n  <purpose>Implementation and Migration Plan</purpose>\n</archimate:model>\n\nIMPORTANT:\n- Use xmlns:archimate=\"http://www.archimatetool.com/archimate\"\n- Root element is <archimate:model>\n- Elements use xsi:type=\"archimate:ElementName\" format\n- Include version=\"5.0.0\" attribute\n\nAfter the XML, also output a PRD SUMMARY in markdown format."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -7008,
+        256
+      ],
+      "id": "pm-agent-v2",
+      "name": "Project Manager Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json) }}\n\nBased on the architecture analysis above, generate a KubeVela OAM Application YAML file for deploying this solution.",
+        "options": {
+          "systemMessage": "You are a Solution Architect creating a KubeVela OAM (Open Application Model) deployment specification.\n\nBased on the architecture analysis provided, generate a VALID KubeVela OAM Application YAML file.\n\nCRITICAL: You may ONLY use the following definitions that exist in our platform:\n\n## AVAILABLE COMPONENT TYPES:\n- webservice: Knative-based web service (params: image, port, resources, language, framework, targetEnvironment)\n- identity-service: Identity/Auth service (params: domain, customUserProfiles, javaVersion, databaseProvisioning)\n- graphql-gateway: GraphQL Federation gateway (params: autoSchema, schemaRefreshInterval)\n- rasa-chatbot: Conversational AI (params: rasaImage, actionsImage, resources)\n- realtime-platform: IoT/Realtime data (params: database, visualization, iot, dataRetention)\n- camunda-orchestrator: BPMN orchestration (params: camundaMode, realtimePlatform, enableEventStreaming)\n- kafka: Message streaming (params: replicas, storageSize)\n- redis: Caching (params: architecture, replicaCount, storageSize)\n- mongodb: Document database (params: replicaCount, storageSize, database)\n- postgresql: Relational database (params: name, database, username, storage)\n- vcluster: Virtual Kubernetes cluster (params: isolationEnabled, serviceType)\n- clickhouse: Analytics database (params: version, replicas, storageSize)\n- neon-postgres: Serverless Postgres (params: database, region, computeSize)\n- auth0-idp: Auth0 identity provider (params: name, targetEnvironment)\n\n## AVAILABLE TRAITS:\n- ingress: HTTP routing (params: domain, path, enableTLS)\n- autoscaler: HPA scaling (params: minReplicas, maxReplicas, targetCPU)\n- kafka-producer: Kafka producer config (params: topics)\n- kafka-consumer: Kafka consumer config (params: topics, consumerGroup)\n\n## AVAILABLE POLICIES:\n- crossplane-execution-order: Deployment ordering (params: phases, phaseDelay)\n- health: Health checks (params: probeTimeout, probeInterval)\n- crossplane-workflow: Workflow config (params: enabled, timeout, mode)\n\n## AVAILABLE WORKFLOW STEPS:\n- create-crossplane-claims\n- wait-for-claims\n- cleanup-failed-claims\n\nOutput ONLY the YAML - no explanations before or after."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -6704,
+        256
+      ],
+      "id": "solution-architect-v2",
+      "name": "Solution Architect Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect all outputs from the workflow\nconst items = $input.all();\n\nlet repoName, projectName, chatInput, domain;\n\ntry {\n  repoName = $('Store Context').first().json.repositoryName;\n  projectName = $('Store Context').first().json.projectName;\n  chatInput = $('Store Context').first().json.chatInput;\n  domain = $('Store Context').first().json.domain || 'Technology';\n} catch (e) {\n  try {\n    repoName = $('Retrieve Context').first().json.repositoryName;\n    projectName = $('Retrieve Context').first().json.projectName;\n    chatInput = $('Retrieve Context').first().json.chatInput;\n    domain = $('Retrieve Context').first().json.domain || 'Technology';\n  } catch (e2) {\n    repoName = 'unknown-repo';\n    projectName = 'Unknown Project';\n    chatInput = '';\n    domain = 'Technology';\n  }\n}\n\nlet projectContext = {\n  projectName: projectName,\n  repositoryName: repoName,\n  domain: domain\n};\n\n// HELPER FUNCTION: Strip markdown code fences from content\nfunction stripMarkdownFences(content) {\n  if (!content || typeof content !== 'string') return content;\n  let cleaned = content.trim();\n  // Remove opening fence with optional language\n  cleaned = cleaned.replace(/^```[a-zA-Z]*\\s*\\n?/, '');\n  // Remove closing fence\n  cleaned = cleaned.replace(/\\n?```\\s*$/, '');\n  return cleaned.trim();\n}\n\n// HELPER FUNCTION: Extract clean XML from agent output (supports both Open Group and Archi-native formats)\nfunction extractCleanXML(output) {\n  if (!output || typeof output !== 'string') return null;\n  \n  // First strip any markdown fences\n  let cleaned = stripMarkdownFences(output);\n  \n  // If it now starts with XML declaration or archimate:model tag, return it\n  if (cleaned.startsWith('<?xml') || cleaned.startsWith('<archimate:model') || cleaned.startsWith('<model')) {\n    return cleaned;\n  }\n  \n  // Try to find Archi-native XML content (archimate:model)\n  const archiModelMatch = cleaned.match(/<\\?xml[\\s\\S]*<\\/archimate:model>/i);\n  if (archiModelMatch) {\n    return archiModelMatch[0];\n  }\n  \n  // Try to find archimate:model without XML declaration\n  const archiModelNoDecl = cleaned.match(/<archimate:model[\\s\\S]*<\\/archimate:model>/i);\n  if (archiModelNoDecl) {\n    return '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n' + archiModelNoDecl[0];\n  }\n  \n  // Fallback: Try Open Group Exchange Format (older)\n  const xmlDeclMatch = cleaned.match(/<\\?xml[\\s\\S]*<\\/model>/i);\n  if (xmlDeclMatch) {\n    return xmlDeclMatch[0];\n  }\n  \n  // Match from <model to </model> (Open Group format)\n  const modelMatch = cleaned.match(/<model[\\s\\S]*<\\/model>/i);\n  if (modelMatch) {\n    return '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n' + modelMatch[0];\n  }\n  \n  // If we still have content that looks like XML, return it with fences stripped\n  if (cleaned.includes('<element') || cleaned.includes('<model') || cleaned.includes('<archimate:')) {\n    return cleaned;\n  }\n  \n  // Return the cleaned content as fallback (don't return null and lose data)\n  return cleaned;\n}\n\n// HELPER FUNCTION: Extract clean YAML from agent output\nfunction extractCleanYAML(output) {\n  if (!output || typeof output !== 'string') return null;\n  let cleaned = stripMarkdownFences(output);\n  return cleaned;\n}\n\n// Default artifacts with Archi-native XML structure\nconst defaultArchiXML = (name) => `<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<archimate:model xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:archimate=\"http://www.archimatetool.com/archimate\" name=\"${name}\" id=\"${name.toLowerCase().replace(/\\s+/g, '-')}-model\" version=\"5.0.0\">\n  <folder name=\"Default\" id=\"default-folder\" type=\"other\">\n    <element xsi:type=\"archimate:Grouping\" name=\"No content generated\" id=\"placeholder-1\"/>\n  </folder>\n  <folder name=\"Relations\" id=\"relations-folder\" type=\"relations\"/>\n  <folder name=\"Views\" id=\"views-folder\" type=\"diagrams\"/>\n  <purpose>No ${name.toLowerCase()} generated.</purpose>\n</archimate:model>`;\n\nconst artifacts = {\n  requirements: '# Requirements Specification\\n\\nNo requirements generated.',\n  compliance: defaultArchiXML('Compliance Model'),\n  businessCanvas: defaultArchiXML('Business Canvas Model'),\n  businessArchitecture: defaultArchiXML('Business Architecture Model'),\n  techRecommendations: defaultArchiXML('Technology Recommendations'),\n  applicationArchitecture: defaultArchiXML('Application Architecture Model'),\n  infrastructureArchitecture: defaultArchiXML('Infrastructure Architecture Model'),\n  implementationPlan: defaultArchiXML('Implementation Plan Model'),\n  oamApplication: 'apiVersion: core.oam.dev/v1beta1\\nkind: Application\\nmetadata:\\n  name: placeholder\\nspec:\\n  components: []'\n};\n\nlet prdContent = '# Product Requirements Document\\n\\nNo PRD content generated.';\nlet requirementsMarkdown = '# Requirements\\n\\nNo requirements generated.';\n\n// Extract BA Agent output (requirements markdown)\ntry {\n  const baNode = $('BA Agent');\n  if (baNode && baNode.first()) {\n    const baOutput = baNode.first().json.output || '';\n    if (baOutput && (baOutput.includes('# Requirements') || baOutput.includes('## '))) {\n      requirementsMarkdown = baOutput;\n      artifacts.requirements = baOutput;\n    }\n  }\n} catch (e) {\n  console.log('BA Agent output not available:', e.message);\n}\n\n// Extract Compliance Agent output\ntry {\n  const complianceNode = $('Compliance Agent');\n  if (complianceNode && complianceNode.first()) {\n    const complianceOutput = complianceNode.first().json.output || '';\n    if (complianceOutput) {\n      const cleanXML = extractCleanXML(complianceOutput);\n      if (cleanXML) {\n        artifacts.compliance = cleanXML;\n      }\n    }\n  }\n} catch (e) {\n  console.log('Compliance Agent output not available:', e.message);\n}\n\n// Extract Business Owner Agent output\ntry {\n  const businessOwnerNode = $('Business Owner Agent');\n  if (businessOwnerNode && businessOwnerNode.first()) {\n    const businessOwnerOutput = businessOwnerNode.first().json.output || '';\n    if (businessOwnerOutput) {\n      const cleanXML = extractCleanXML(businessOwnerOutput);\n      if (cleanXML) {\n        artifacts.businessCanvas = cleanXML;\n      }\n    }\n  }\n} catch (e) {\n  console.log('Business Owner Agent output not available:', e.message);\n}\n\n// Extract Business Architect Agent output\ntry {\n  const businessArchNode = $('Business Architect Agent');\n  if (businessArchNode && businessArchNode.first()) {\n    const businessArchOutput = businessArchNode.first().json.output || '';\n    if (businessArchOutput) {\n      const cleanXML = extractCleanXML(businessArchOutput);\n      if (cleanXML) {\n        artifacts.businessArchitecture = cleanXML;\n      }\n    }\n  }\n} catch (e) {\n  console.log('Business Architect Agent output not available:', e.message);\n}\n\n// Extract CTO Agent output\ntry {\n  const ctoNode = $('CTO Agent');\n  if (ctoNode && ctoNode.first()) {\n    const ctoOutput = ctoNode.first().json.output || '';\n    if (ctoOutput) {\n      const cleanXML = extractCleanXML(ctoOutput);\n      if (cleanXML) {\n        artifacts.techRecommendations = cleanXML;\n      }\n    }\n  }\n} catch (e) {\n  console.log('CTO Agent output not available:', e.message);\n}\n\n// Extract Application Architect Agent output\ntry {\n  const appArchNode = $('Application Architect Agent');\n  if (appArchNode && appArchNode.first()) {\n    const appArchOutput = appArchNode.first().json.output || '';\n    if (appArchOutput) {\n      const cleanXML = extractCleanXML(appArchOutput);\n      if (cleanXML) {\n        artifacts.applicationArchitecture = cleanXML;\n      }\n    }\n  }\n} catch (e) {\n  console.log('Application Architect Agent output not available:', e.message);\n}\n\n// Extract Infrastructure Architect Agent output\ntry {\n  const infraArchNode = $('Infrastructure Architect Agent');\n  if (infraArchNode && infraArchNode.first()) {\n    const infraArchOutput = infraArchNode.first().json.output || '';\n    if (infraArchOutput) {\n      const cleanXML = extractCleanXML(infraArchOutput);\n      if (cleanXML) {\n        artifacts.infrastructureArchitecture = cleanXML;\n      }\n    }\n  }\n} catch (e) {\n  console.log('Infrastructure Architect Agent output not available:', e.message);\n}\n\n// Extract Project Manager Agent output (implementation plan + PRD)\ntry {\n  const pmNode = $('Project Manager Agent');\n  if (pmNode && pmNode.first()) {\n    const pmOutput = pmNode.first().json.output || '';\n    if (pmOutput) {\n      // First strip markdown fences\n      let cleanedPmOutput = stripMarkdownFences(pmOutput);\n      \n      // Check if it contains Archi-native XML (archimate:model)\n      if (cleanedPmOutput.includes('<archimate:model') || cleanedPmOutput.includes('<?xml')) {\n        // Try Archi-native format first\n        const archiMatch = cleanedPmOutput.match(/<\\?xml[\\s\\S]*?<\\/archimate:model>/i) || cleanedPmOutput.match(/<archimate:model[\\s\\S]*?<\\/archimate:model>/i);\n        if (archiMatch) {\n          let xmlContent = archiMatch[0];\n          if (!xmlContent.startsWith('<?xml')) {\n            xmlContent = '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n' + xmlContent;\n          }\n          artifacts.implementationPlan = xmlContent;\n          cleanedPmOutput = cleanedPmOutput.replace(archiMatch[0], '').trim();\n        } else {\n          // Fallback to old format\n          const xmlMatch = cleanedPmOutput.match(/<\\?xml[\\s\\S]*?<\\/model>/i) || cleanedPmOutput.match(/<model[\\s\\S]*?<\\/model>/i);\n          if (xmlMatch) {\n            let xmlContent = xmlMatch[0];\n            if (!xmlContent.startsWith('<?xml')) {\n              xmlContent = '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n' + xmlContent;\n            }\n            artifacts.implementationPlan = xmlContent;\n            cleanedPmOutput = cleanedPmOutput.replace(xmlMatch[0], '').trim();\n          }\n        }\n      }\n      \n      // Check for PRD/markdown content after XML extraction\n      if (cleanedPmOutput && cleanedPmOutput.includes('# ')) {\n        const prdStart = cleanedPmOutput.indexOf('# ');\n        if (prdStart !== -1) {\n          prdContent = cleanedPmOutput.substring(prdStart);\n        }\n      }\n    }\n  }\n} catch (e) {\n  console.log('Project Manager Agent output not available:', e.message);\n}\n\n// If no PRD was extracted from PM, build one from requirements\nif (prdContent === '# Product Requirements Document\\n\\nNo PRD content generated.' && requirementsMarkdown !== '# Requirements\\n\\nNo requirements generated.') {\n  prdContent = `# Product Requirements Document - ${projectName}\\n\\n## Overview\\nThis PRD is based on the requirements analysis for ${projectName} in the ${domain} domain.\\n\\n---\\n\\n${requirementsMarkdown}`;\n}\n\n// Extract Solution Architect Agent output (OAM YAML)\ntry {\n  const solutionNode = $('Solution Architect Agent');\n  if (solutionNode && solutionNode.first()) {\n    const solutionOutput = solutionNode.first().json.output || '';\n    if (solutionOutput) {\n      const cleanYAML = extractCleanYAML(solutionOutput);\n      if (cleanYAML && cleanYAML.includes('apiVersion:')) {\n        artifacts.oamApplication = cleanYAML;\n      }\n    }\n  }\n} catch (e) {\n  console.log('Solution Architect Agent output not available:', e.message);\n}\n\nreturn {\n  json: {\n    ...projectContext,\n    chatInput,\n    artifacts,\n    requirementsMarkdown,\n    prdContent,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6400,
+        256
+      ],
+      "id": "parse-project-context-v2",
+      "name": "Parse Project Context"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/requirements.md",
+        "fileContent": "={{ $('Parse Project Context').item.json.requirementsMarkdown || $('Parse Project Context').item.json.artifacts.requirements || '# Requirements\\n\\nNo requirements generated.' }}",
+        "commitMessage": "Add requirements specification (Markdown)"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        -6096,
+        0
+      ],
+      "id": "commit-requirements-v2",
+      "name": "Commit Requirements",
+      "webhookId": "99122e74-bbe9-4c96-bff3-1ea3148aecb9",
+      "credentials": {
+        "githubApi": {
+          "id": "a3T4qschjFzSez08",
+          "name": "GitHub account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/compliance.archimate",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.compliance || '<?xml version=\"1.0\"?>\\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Compliance</name></model>' }}",
+        "commitMessage": "Add compliance model (ArchiMate 3.1)"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        -6096,
+        144
+      ],
+      "id": "commit-compliance-v2",
+      "name": "Commit Compliance",
+      "webhookId": "e1394e9e-c1b3-4687-847b-370fc9b16e9f",
+      "credentials": {
+        "githubApi": {
+          "id": "a3T4qschjFzSez08",
+          "name": "GitHub account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/business-canvas.archimate",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.businessCanvas || '<?xml version=\"1.0\"?>\\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Business Canvas</name></model>' }}",
+        "commitMessage": "Add business canvas model (ArchiMate 3.1)"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        -6096,
+        288
+      ],
+      "id": "commit-business-canvas-v2",
+      "name": "Commit Business Canvas",
+      "webhookId": "875c63cb-778c-4a22-b0b3-f01802034753",
+      "credentials": {
+        "githubApi": {
+          "id": "a3T4qschjFzSez08",
+          "name": "GitHub account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/business-architecture.archimate",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.businessArchitecture || '<?xml version=\"1.0\"?>\\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Business Architecture</name></model>' }}",
+        "commitMessage": "Add business architecture model (ArchiMate 3.1)"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        -6096,
+        432
+      ],
+      "id": "commit-business-arch-v2",
+      "name": "Commit Business Architecture",
+      "webhookId": "dab53d66-735e-4149-9d12-1d6934cb60ca",
+      "credentials": {
+        "githubApi": {
+          "id": "a3T4qschjFzSez08",
+          "name": "GitHub account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/technology-recommendations.archimate",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.techRecommendations || '<?xml version=\"1.0\"?>\\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Technology Recommendations</name></model>' }}",
+        "commitMessage": "Add technology recommendations (ArchiMate 3.1)"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        -6096,
+        576
+      ],
+      "id": "commit-tech-rec-v2",
+      "name": "Commit Tech Recommendations",
+      "webhookId": "543fc241-8485-49b0-820f-8b6704287474",
+      "credentials": {
+        "githubApi": {
+          "id": "a3T4qschjFzSez08",
+          "name": "GitHub account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -5792,
+        256
+      ],
+      "id": "merge-commits-1-v2",
+      "name": "Merge Commits 1"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/application-architecture.archimate",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.applicationArchitecture || '<?xml version=\"1.0\"?>\\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Application Architecture</name></model>' }}",
+        "commitMessage": "Add application architecture model (ArchiMate 3.1)"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        -5488,
+        0
+      ],
+      "id": "commit-app-arch-v2",
+      "name": "Commit App Architecture",
+      "webhookId": "f494109c-cbd3-4590-9143-28d96c878109",
+      "credentials": {
+        "githubApi": {
+          "id": "a3T4qschjFzSez08",
+          "name": "GitHub account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/infrastructure-architecture.archimate",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.infrastructureArchitecture || '<?xml version=\"1.0\"?>\\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Infrastructure Architecture</name></model>' }}",
+        "commitMessage": "Add infrastructure architecture model (ArchiMate 3.1)"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        -5488,
+        144
+      ],
+      "id": "commit-infra-arch-v2",
+      "name": "Commit Infra Architecture",
+      "webhookId": "55dac0ef-190a-418d-909c-322c29978574",
+      "credentials": {
+        "githubApi": {
+          "id": "a3T4qschjFzSez08",
+          "name": "GitHub account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/architecture/implementation-plan.archimate",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.implementationPlan || '<?xml version=\"1.0\"?>\\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.1/\"><name>Implementation Plan</name></model>' }}",
+        "commitMessage": "Add implementation plan model (ArchiMate 3.1)"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        -5488,
+        288
+      ],
+      "id": "commit-impl-plan-v2",
+      "name": "Commit Implementation Plan",
+      "webhookId": "5aeda89f-312f-4884-8bdf-10ea763d4db1",
+      "credentials": {
+        "githubApi": {
+          "id": "a3T4qschjFzSez08",
+          "name": "GitHub account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/deployment/application.oam.yaml",
+        "fileContent": "={{ $('Parse Project Context').item.json.artifacts.oamApplication || 'apiVersion: core.oam.dev/v1beta1\\nkind: Application\\nmetadata:\\n  name: placeholder\\nspec:\\n  components: []' }}",
+        "commitMessage": "Add KubeVela OAM Application deployment spec"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        -5488,
+        432
+      ],
+      "id": "commit-oam-v2",
+      "name": "Commit OAM Application",
+      "webhookId": "e6fdf1e7-3ea1-4508-8490-0bc942f197ba",
+      "credentials": {
+        "githubApi": {
+          "id": "a3T4qschjFzSez08",
+          "name": "GitHub account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -5184,
+        256
+      ],
+      "id": "merge-commits-2-v2",
+      "name": "Merge Commits 2"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "shlapolosa"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Parse Project Context').item.json.repositoryName }}"
+        },
+        "filePath": "docs/PRD.md",
+        "fileContent": "={{ $('Parse Project Context').item.json.prdContent || '# Product Requirements Document\\n\\nNo content generated.' }}",
+        "commitMessage": "Add Product Requirements Document"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        -4880,
+        256
+      ],
+      "id": "commit-prd-v2",
+      "name": "Commit PRD",
+      "webhookId": "229ea0ac-68c4-4dbc-80db-91ee43885041",
+      "credentials": {
+        "githubApi": {
+          "id": "a3T4qschjFzSez08",
+          "name": "GitHub account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0952L4JNHH",
+          "mode": "id"
+        },
+        "text": "=:white_check_mark: *TOGAF Enterprise Architecture Complete (v2)*\n\n:package: *Repository:* `{{ $('Parse Project Context').item.json.repositoryName }}`\n:clipboard: *Project:* {{ $('Parse Project Context').item.json.projectName }}\n:globe_with_meridians: *Domain:* {{ $('Parse Project Context').item.json.domain }}\n\n:file_folder: *Committed Artifacts (10 files):*\n\n*ArchiMate 3.1 Models (.archimate):*\n• docs/architecture/compliance.archimate\n• docs/architecture/business-canvas.archimate\n• docs/architecture/business-architecture.archimate\n• docs/architecture/technology-recommendations.archimate\n• docs/architecture/application-architecture.archimate\n• docs/architecture/infrastructure-architecture.archimate\n• docs/architecture/implementation-plan.archimate\n\n*Documentation:*\n• docs/requirements.md\n• docs/PRD.md\n\n*Deployment:*\n• docs/deployment/application.oam.yaml\n\n:link: <https://github.com/shlapolosa/{{ $('Parse Project Context').item.json.repositoryName }}|View Repository>",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -4576,
+        256
+      ],
+      "id": "slack-completion-v2",
+      "name": "Send Completion Notification",
+      "webhookId": "c290895f-e29b-4b2a-bc4d-cc77d83f16ef",
+      "credentials": {
+        "slackApi": {
+          "id": "FGnClpVvmu5ycOWN",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ output: 'TOGAF Enterprise Architecture Complete for ' + $('Parse Project Context').item.json.projectName + '. Repository: ' + $('Parse Project Context').item.json.repositoryName + '. Generated ' + Object.keys($('Parse Project Context').item.json.artifacts || {}).length + ' architecture artifacts including requirements.md, .archimate models, and OAM deployment spec. View at: https://github.com/shlapolosa/' + $('Parse Project Context').item.json.repositoryName, success: true, projectName: $('Parse Project Context').item.json.projectName, repositoryName: $('Parse Project Context').item.json.repositoryName, status: 'TOGAF Enterprise Architecture Complete', artifacts: Object.keys($('Parse Project Context').item.json.artifacts || {}) }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -4336,
+        256
+      ],
+      "id": "respond-webhook-v2",
+      "name": "Respond to TOGAF Webhook"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseMode": "responseNodes"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -11152,
+        -528
+      ],
+      "id": "chat-trigger-v2",
+      "name": "When chat message received",
+      "webhookId": "togaf-chat-v2"
+    },
+    {
+      "parameters": {
+        "content": "## TOGAF Enterprise Delivery v2\n\n### New Webhook Path:\n/webhook/togaf-architect-v2\n\n### Enhancements in v2:\n1. BA Agent with web search for research\n2. .archimate output format for Archi tool\n3. Error handling with smart classification\n4. Human-readable progress messages\n5. Auto-proceed with recommendations\n\n### Flow:\n1. User inputs project requirements\n2. BA Agent researches and creates spec\n3. TOGAF agents generate architecture\n4. Artifacts committed to GitHub\n5. Completion notification sent",
+        "height": 360,
+        "width": 350
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -11696,
+        -976
+      ],
+      "id": "instructions-v2",
+      "name": "Instructions v2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error Classification and Handling for TOGAF Workflow v2\n// Classifies errors into categories and determines appropriate action\n\nconst error = $input.first().json;\nconst errorMessage = error.message || error.error || JSON.stringify(error);\nconst nodeName = error.nodeName || 'Unknown';\nconst errorStack = error.stack || '';\n\n// Error classification\nconst classifyError = (message, stack) => {\n  const msg = (message + ' ' + stack).toLowerCase();\n  \n  // AUTH_ERROR - User needs to fix credentials\n  if (msg.includes('401') || msg.includes('403') || msg.includes('unauthorized') || \n      msg.includes('forbidden') || msg.includes('invalid_auth') || msg.includes('token')) {\n    return {\n      type: 'AUTH_ERROR',\n      userFixable: true,\n      shouldRetry: false,\n      friendlyMessage: 'Authentication failed. Please check your credentials in n8n.',\n      action: 'STOP_AND_NOTIFY'\n    };\n  }\n  \n  // RATE_LIMIT - Transient, should retry with backoff\n  if (msg.includes('429') || msg.includes('rate limit') || msg.includes('too many requests') ||\n      msg.includes('quota exceeded')) {\n    return {\n      type: 'RATE_LIMIT',\n      userFixable: false,\n      shouldRetry: true,\n      retryAfter: 60,\n      friendlyMessage: 'Rate limit reached. The system will retry automatically.',\n      action: 'RETRY_WITH_BACKOFF'\n    };\n  }\n  \n  // NETWORK_ERROR - Transient, should retry\n  if (msg.includes('econnrefused') || msg.includes('enotfound') || msg.includes('timeout') ||\n      msg.includes('network') || msg.includes('503') || msg.includes('502') || msg.includes('504')) {\n    return {\n      type: 'NETWORK_ERROR',\n      userFixable: false,\n      shouldRetry: true,\n      retryAfter: 30,\n      friendlyMessage: 'Network issue detected. Retrying...',\n      action: 'RETRY_WITH_BACKOFF'\n    };\n  }\n  \n  // VALIDATION_ERROR - User needs to fix input\n  if (msg.includes('validation') || msg.includes('invalid') || msg.includes('required') ||\n      msg.includes('missing parameter') || msg.includes('bad request') || msg.includes('400')) {\n    return {\n      type: 'VALIDATION_ERROR',\n      userFixable: true,\n      shouldRetry: false,\n      friendlyMessage: 'Invalid input detected. Please check your request.',\n      action: 'STOP_AND_NOTIFY'\n    };\n  }\n  \n  // LLM_ERROR - May be transient (overload) or permanent (content policy)\n  if (msg.includes('anthropic') || msg.includes('openai') || msg.includes('llm') ||\n      msg.includes('completion') || msg.includes('content policy') || msg.includes('overloaded')) {\n    const isOverload = msg.includes('overloaded') || msg.includes('capacity');\n    return {\n      type: 'LLM_ERROR',\n      userFixable: !isOverload,\n      shouldRetry: isOverload,\n      retryAfter: isOverload ? 120 : 0,\n      friendlyMessage: isOverload \n        ? 'AI service is busy. Retrying in 2 minutes...'\n        : 'AI processing error. Please try rephrasing your request.',\n      action: isOverload ? 'RETRY_WITH_BACKOFF' : 'STOP_AND_NOTIFY'\n    };\n  }\n  \n  // GITHUB_ERROR - May be auth or transient\n  if (msg.includes('github') || msg.includes('repository') || msg.includes('commit')) {\n    return {\n      type: 'GITHUB_ERROR',\n      userFixable: true,\n      shouldRetry: false,\n      friendlyMessage: 'GitHub operation failed. Please check repository permissions.',\n      action: 'STOP_AND_NOTIFY'\n    };\n  }\n  \n  // UNKNOWN_ERROR - Default, stop and notify\n  return {\n    type: 'UNKNOWN_ERROR',\n    userFixable: false,\n    shouldRetry: false,\n    friendlyMessage: 'An unexpected error occurred. The team has been notified.',\n    action: 'STOP_AND_NOTIFY'\n  };\n};\n\nconst classification = classifyError(errorMessage, errorStack);\n\n// Build error report\nconst errorReport = {\n  ...classification,\n  originalError: errorMessage,\n  nodeName: nodeName,\n  timestamp: new Date().toISOString()\n};\n\nreturn errorReport;"
+      },
+      "id": "error-classifier-v2",
+      "name": "Error Classifier",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4800,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0952L4JNHH",
+          "mode": "id"
+        },
+        "text": "=:warning: *TOGAF Workflow Error*\n\n{{ $json.friendlyMessage }}\n\n*Error Type:* `{{ $json.type }}`\n*Node:* `{{ $json.nodeName }}`\n*Time:* {{ $json.timestamp }}\n\n{{ $json.userFixable ? ':point_up: *Action Required:* Please fix the issue above and try again.' : ':arrows_counterclockwise: The team has been notified and is investigating.' }}",
+        "otherOptions": {}
+      },
+      "id": "slack-error-notify-v2",
+      "name": "Notify User of Error",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -4496,
+        608
+      ],
+      "webhookId": "8c324f72-32bb-40c5-b35b-b9ce23f90308",
+      "credentials": {
+        "slackApi": {
+          "id": "FGnClpVvmu5ycOWN",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0952L4JNHH",
+          "mode": "id"
+        },
+        "text": "=:rocket: *TOGAF Enterprise Architecture Started*\n\n:clipboard: *Project:* {{ $json.projectName || 'New Project' }}\n:package: *Repository:* `{{ $json.repositoryName }}`\n:globe_with_meridians: *Domain:* {{ $json.domain || 'Technology' }}\n\n:hourglass_flowing_sand: Starting architecture generation... This typically takes 3-5 minutes.",
+        "otherOptions": {}
+      },
+      "id": "progress-start-v2",
+      "name": "Progress: Starting",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -10352,
+        -608
+      ],
+      "webhookId": "11d9e2c4-c930-4db7-866a-c561c379fd2f",
+      "credentials": {
+        "slackApi": {
+          "id": "FGnClpVvmu5ycOWN",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0952L4JNHH",
+          "mode": "id"
+        },
+        "text": ":mag: *Phase 1: Requirements Analysis*\n\n:white_check_mark: Context established\n:hammer_and_wrench: Business Analyst researching requirements...\n:hammer_and_wrench: Compliance Officer identifying regulations...",
+        "otherOptions": {}
+      },
+      "id": "progress-phase1-v2",
+      "name": "Progress: Phase 1",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -9504,
+        -96
+      ],
+      "webhookId": "b6f77258-53b2-4628-8877-97f77d0e60bf",
+      "credentials": {
+        "slackApi": {
+          "id": "FGnClpVvmu5ycOWN",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0952L4JNHH",
+          "mode": "id"
+        },
+        "text": ":chart_with_upwards_trend: *Phase 2: Business Architecture*\n\n:white_check_mark: Requirements & Compliance complete\n:hammer_and_wrench: Building Business Model Canvas...\n:hammer_and_wrench: Creating Business Architecture...\n:hammer_and_wrench: Gathering Technology Recommendations...",
+        "otherOptions": {}
+      },
+      "id": "progress-phase2-v2",
+      "name": "Progress: Phase 2",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -8704,
+        464
+      ],
+      "webhookId": "918fff29-9c0b-4b68-9f8e-ec198861b9bd",
+      "credentials": {
+        "slackApi": {
+          "id": "FGnClpVvmu5ycOWN",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0952L4JNHH",
+          "mode": "id"
+        },
+        "text": ":gear: *Phase 3: Technical Architecture*\n\n:white_check_mark: Business Architecture complete\n:hammer_and_wrench: Designing Application Architecture...\n:hammer_and_wrench: Planning Infrastructure...\n:hammer_and_wrench: Creating Implementation Plan...",
+        "otherOptions": {}
+      },
+      "id": "progress-phase3-v2",
+      "name": "Progress: Phase 3",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -7744,
+        464
+      ],
+      "webhookId": "a556f4b2-17bb-4a12-b4db-533bae32a0b8",
+      "credentials": {
+        "slackApi": {
+          "id": "FGnClpVvmu5ycOWN",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0952L4JNHH",
+          "mode": "id"
+        },
+        "text": ":floppy_disk: *Phase 4: Committing Artifacts*\n\n:white_check_mark: All architecture models generated\n:hammer_and_wrench: Committing 10 files to GitHub repository...\n:hammer_and_wrench: Generating PRD with Mermaid diagrams...",
+        "otherOptions": {}
+      },
+      "id": "progress-committing-v2",
+      "name": "Progress: Committing",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -6256,
+        464
+      ],
+      "webhookId": "d6cf76ba-3c71-4c84-96ce-bb725aaf5aac",
+      "credentials": {
+        "slackApi": {
+          "id": "FGnClpVvmu5ycOWN",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "merge-phase-3b-v2",
+      "name": "Merge Phase 3B",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -6848,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0952L4JNHH",
+          "mode": "id"
+        },
+        "text": ":brain: *All Architecture Agents Complete*\n\n:white_check_mark: Application Architecture designed\n:white_check_mark: Infrastructure Architecture planned\n:white_check_mark: Implementation Plan created\n:hammer_and_wrench: Solution Architect compiling final OAM deployment...",
+        "otherOptions": {}
+      },
+      "id": "progress-agents-done-v2",
+      "name": "Progress: Agents Complete",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -6544,
+        256
+      ],
+      "webhookId": "cee916bd-e9df-41f0-a02b-59d43fc1aa4c",
+      "credentials": {
+        "slackApi": {
+          "id": "FGnClpVvmu5ycOWN",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook v2": {
+      "main": [
+        [
+          {
+            "node": "Input Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Input Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input Normalizer": {
+      "main": [
+        [
+          {
+            "node": "Service Name Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Service Name Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Service Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Service Name": {
+      "main": [
+        [
+          {
+            "node": "Progress: Starting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Context": {
+      "main": [
+        [
+          {
+            "node": "Create Microservice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Service Name Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Slack Orchestrator Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "BA Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Compliance Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Business Owner Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Business Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "CTO Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Application Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Infrastructure Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Project Manager Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Solution Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Events Webhook v2": {
+      "main": [
+        [
+          {
+            "node": "Is Challenge?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Challenge?": {
+      "main": [
+        [
+          {
+            "node": "Respond Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF Repo Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Repo Name": {
+      "main": [
+        [
+          {
+            "node": "Retrieve Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve Context": {
+      "main": [
+        [
+          {
+            "node": "Slack Orchestrator Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Orchestrator Agent": {
+      "main": [
+        [
+          {
+            "node": "Progress: Phase 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BA Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Phase 1": {
+      "main": [
+        [
+          {
+            "node": "Progress: Phase 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Owner Agent": {
+      "main": [
+        [
+          {
+            "node": "Business Architect Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "CTO Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 3A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CTO Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 3A",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Phase 3A": {
+      "main": [
+        [
+          {
+            "node": "Progress: Phase 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Project Context": {
+      "main": [
+        [
+          {
+            "node": "Progress: Committing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit Requirements": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit Compliance": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Commits 1": {
+      "main": [
+        [
+          {
+            "node": "Commit App Architecture",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Infra Architecture",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Implementation Plan",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit OAM Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit App Architecture": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit Infra Architecture": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits 2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Commits 2": {
+      "main": [
+        [
+          {
+            "node": "Commit PRD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit PRD": {
+      "main": [
+        [
+          {
+            "node": "Send Completion Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Completion Notification": {
+      "main": [
+        [
+          {
+            "node": "Respond to TOGAF Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Classifier": {
+      "main": [
+        [
+          {
+            "node": "Notify User of Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Progress: Starting": {
+      "main": [
+        [
+          {
+            "node": "Store Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Progress: Phase 1": {
+      "main": [
+        [
+          {
+            "node": "BA Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Compliance Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Progress: Phase 2": {
+      "main": [
+        [
+          {
+            "node": "Business Owner Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Progress: Phase 3": {
+      "main": [
+        [
+          {
+            "node": "Application Architect Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Infrastructure Architect Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Project Manager Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Progress: Committing": {
+      "main": [
+        [
+          {
+            "node": "Commit Requirements",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Compliance",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Business Canvas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Business Architecture",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Tech Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Repo Ready": {
+      "main": [
+        [
+          {
+            "node": "Extract Repo Name",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Application Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 3B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Infrastructure Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 3B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Project Manager Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Phase 3B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Phase 3B": {
+      "main": [
+        [
+          {
+            "node": "Progress: Agents Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Progress: Agents Complete": {
+      "main": [
+        [
+          {
+            "node": "Solution Architect Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solution Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Project Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "versionId": "240aff6e-f0ab-4755-b01d-d6b6faec6734",
+  "meta": {
+    "instanceId": "c11df0eb54e1527c1b0cc7f28e0d4e243a0e5f8060e9c90276c6fd715279c39c"
+  },
+  "id": "dIKVgIPfB83InzFx",
+  "tags": []
+}

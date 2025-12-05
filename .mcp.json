@@ -7,8 +7,8 @@
         "MCP_MODE": "stdio",
         "LOG_LEVEL": "error",
         "DISABLE_CONSOLE_OUTPUT": "true",
-        "N8N_API_URL": "https://n8n.srv1157352.hstgr.cloud",
-        "N8N_API_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiNjU3MDViNy0xZDUwLTQ5NzctOWJlMi05MDk2NDJlYzA5ZDYiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzY0MzA1MTUyfQ.coUKvZj7y2uo7C1LCFQwp5x8MrgnZSJMBAyFuhSHoCQ"
+        "N8N_API_URL": "https://n8n.socrates-hlapolosa.org",
+        "N8N_API_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ZDg4OTM5Mi05M2RkLTRjNjQtYmRlOC04MGVjYTI3NWNiMTgiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzY0OTQ0MDA4fQ.uoUTfwnoOo6QIzB3nWnKoHp8k1zpBAXRB3UniEhmyV4"
       }
     }
   }
