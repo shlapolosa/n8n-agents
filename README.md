@@ -52,8 +52,8 @@ This workflow provides an end-to-end solution for:
 
 | File | Description |
 |------|-------------|
-| `togaf-workflow-with-slack.json` | Main TOGAF workflow with Slack integration |
-| `togaf-slack-listener.json` | Listener workflow for Slack bot responses |
+| `togaf-agents-current-v2.json` | Main TOGAF workflow with Slack integration |
+| `n8n_pipe.py` | OpenWebUI Pipe function for real-time status updates |
 
 ## Environment Variables
 
@@ -203,13 +203,233 @@ In the **Slack Listener workflow**, replace:
    - This must be running to catch microservice bot responses
 2. **Then**, activate the **main TOGAF workflow**
 
+## OpenWebUI Integration
+
+This workflow supports integration with OpenWebUI via a custom Pipe function that provides real-time status updates during workflow execution.
+
+### Data Flow Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            OPENWEBUI + N8N DATA FLOW                          │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────┐     ┌─────────────────────────────────────────────────────────┐
+│  OPENWEBUI  │     │                      N8N WORKFLOW                        │
+│             │     │                                                          │
+│  User types │     │  ┌─────────────────────────────────────────────────┐    │
+│  request    │     │  │         PATH 1: WEBHOOK (Synchronous)           │    │
+│      │      │     │  │                                                 │    │
+│      ▼      │     │  │  Webhook ──► Service Name Agent ──► Parse      │    │
+│ ┌─────────┐ │     │  │     │              │                   │       │    │
+│ │  Pipe   │─┼─────┼──┼─────┘              ▼                   ▼       │    │
+│ │Function │ │ POST│  │            Store Context ──► Create Repo (Slack)│    │
+│ └────┬────┘ │     │  │                   │                            │    │
+│      │      │     │  │                   ▼                            │    │
+│      │      │     │  │         Return executionId + statusUrl         │    │
+│      │      │     │  └─────────────────────────────────────────────────┘    │
+│      │      │     │                                                          │
+│      │      │     │  ┌─────────────────────────────────────────────────┐    │
+│      │      │     │  │         PATH 2: SLACK EVENT (Async)             │    │
+│      │      │     │  │                                                 │    │
+│      │      │     │  │  Slack Event ──► Retrieve Context               │    │
+│      │      │     │  │       │                │                        │    │
+│      │      │     │  │       ▼                ▼                        │    │
+│      │      │     │  │  ┌──────────────────────────────────────┐      │    │
+│      │      │     │  │  │          AI AGENT PIPELINE           │      │    │
+│      │      │     │  │  │                                      │      │    │
+│      │      │     │  │  │  Phase 1: BA Agent + Compliance      │      │    │
+│      │      │     │  │  │      │    ▼ Update Status Storage    │      │    │
+│      │      │     │  │  │  Phase 2: Business Architecture      │      │    │
+│ ┌────┴────┐ │     │  │  │      │    ▼ Update Status Storage    │      │    │
+│ │ Poll    │ │     │  │  │  Phase 3: Technical Architecture     │      │    │
+│ │ Status  │─┼─────┼──┼──┼──────┼────▼ Update Status Storage    │      │    │
+│ │ (5 sec) │ │ GET │  │  │  Phase 4: Commit to GitHub           │      │    │
+│ └────┬────┘ │     │  │  │      │    ▼ Update Status Storage    │      │    │
+│      │      │     │  │  │  Phase 5: Complete                   │      │    │
+│      │      │     │  │  └──────────────────────────────────────┘      │    │
+│      │      │     │  └─────────────────────────────────────────────────┘    │
+│      ▼      │     │                                                          │
+│ ┌─────────┐ │     │  ┌─────────────────────────────────────────────────┐    │
+│ │ Status  │ │     │  │           STATUS WEBHOOK (GET)                  │    │
+│ │ Updates │◄┼─────┼──┼───  /webhook/togaf-status?executionId=xxx      │    │
+│ │ in Chat │ │ JSON│  │                      │                          │    │
+│ └─────────┘ │     │  │                      ▼                          │    │
+│      │      │     │  │   Returns: {phase, message, progress, done}     │    │
+│      ▼      │     │  └─────────────────────────────────────────────────┘    │
+│  Final     │     │                                                          │
+│  Response   │     │                                                          │
+└─────────────┘     └──────────────────────────────────────────────────────────┘
+```
+
+### Why Polling (Not Webhooks/Callbacks)
+
+The architecture uses **polling** instead of webhook callbacks because:
+
+1. **Chat Context Persistence**: If a user switches chats while waiting, callbacks can't inject responses into the original chat context
+2. **Connection Control**: The Pipe function maintains the HTTP connection, ensuring updates always appear in the correct conversation
+3. **UX Consistency**: User sees continuous "thinking" indicator with progressive status updates
+
+### OpenWebUI Configuration
+
+#### Step 1: Install the Pipe Function
+
+1. In OpenWebUI, go to **Admin Panel → Functions**
+2. Click **Create Function**
+3. Copy the contents of `n8n_pipe.py` into the function editor
+4. Save the function
+
+#### Step 2: Configure Valves
+
+After saving, configure the function's valves:
+
+| Valve | Description | Example Value |
+|-------|-------------|---------------|
+| `n8n_url` | Main workflow webhook URL | `https://n8n.your-domain.com/webhook/togaf-architect-v2` |
+| `n8n_status_url` | Status polling endpoint | `https://n8n.your-domain.com/webhook/togaf-status` |
+| `n8n_bearer_token` | Authentication token | `testAuth` |
+| `input_field` | JSON field for user input | `chatInput` |
+| `response_field` | JSON field for response | `output` |
+| `poll_interval` | Seconds between polls | `5.0` |
+| `max_poll_time` | Maximum wait time (seconds) | `600.0` |
+| `emit_interval` | Minimum seconds between status UI updates | `2.0` |
+| `enable_status_indicator` | Show status in UI | `true` |
+
+#### Step 3: Enable as Model
+
+1. Go to **Admin Panel → Functions**
+2. Find your N8N Pipe function
+3. Toggle **Enable** to make it appear as a model in the chat UI
+
+#### Step 4: Use in Chat
+
+1. Start a new chat in OpenWebUI
+2. Select "N8N Pipe" (or your function name) as the model
+3. Type your TOGAF project request
+4. Watch real-time status updates as the workflow progresses
+
+### N8N Workflow Configuration for OpenWebUI
+
+The n8n workflow requires these components for OpenWebUI integration:
+
+#### 1. Status Webhook Node
+
+Create a webhook to handle status polling:
+
+- **Path**: `/webhook/togaf-status`
+- **Method**: GET
+- **Authentication**: Header Auth (same as main webhook)
+- **Response**: JSON from static data storage
+
+```javascript
+// Status Handler Code Node
+const staticData = $getWorkflowStaticData('global');
+const executionId = $input.first().json.query.executionId;
+const status = staticData.executions?.[executionId];
+
+if (!status) {
+  return { json: { error: 'Execution not found', executionId, done: true } };
+}
+
+return { json: status };
+```
+
+#### 2. Execution ID Generation
+
+In the "Store Context" node, generate a unique execution ID:
+
+```javascript
+const executionId = `togaf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+// Store in static data
+const staticData = $getWorkflowStaticData('global');
+staticData.executions = staticData.executions || {};
+staticData.executions[executionId] = {
+  executionId,
+  phase: 'starting',
+  phaseNumber: 0,
+  totalPhases: 5,
+  message: "🚀 Starting TOGAF workflow...",
+  progress: 5,
+  done: false,
+  result: null
+};
+```
+
+#### 3. Status Update Nodes
+
+After each phase, update the status storage:
+
+```javascript
+// Example: After Phase 1 (Requirements)
+const staticData = $getWorkflowStaticData('global');
+const executionId = $('Store Context').first().json.executionId;
+
+staticData.executions[executionId] = {
+  ...staticData.executions[executionId],
+  phase: 'requirements',
+  phaseNumber: 1,
+  message: "🔍 Phase 1: Requirements Analysis\n\n✅ Context established\n🔧 Analyzing requirements...",
+  progress: 20,
+  updatedAt: new Date().toISOString()
+};
+```
+
+#### 4. Phase Status Messages
+
+| Phase | Progress | Message |
+|-------|----------|---------|
+| 0 | 5% | 🚀 Starting TOGAF workflow... |
+| 1 | 20% | 🔍 Phase 1: Requirements Analysis |
+| 2 | 40% | 📈 Phase 2: Business Architecture |
+| 3 | 60% | ⚙️ Phase 3: Technical Architecture |
+| 4 | 80% | 💾 Phase 4: Committing Artifacts |
+| 5 | 100% | ✅ TOGAF Enterprise Architecture Complete |
+
+### Status Cleanup (Memory Management)
+
+Add TTL cleanup to prevent memory bloat in n8n:
+
+```javascript
+// Add to any status update node
+const staticData = $getWorkflowStaticData('global');
+const ONE_HOUR = 60 * 60 * 1000;
+const now = Date.now();
+
+if (staticData.executions) {
+  for (const [id, exec] of Object.entries(staticData.executions)) {
+    if (exec.updatedAt && (now - new Date(exec.updatedAt).getTime()) > ONE_HOUR) {
+      delete staticData.executions[id];
+    }
+  }
+}
+```
+
+---
+
 ## Usage
 
 ### Entry Points
 
-The workflow supports two entry points:
+The workflow supports three entry points:
 
-#### 1. Chat Trigger (Interactive Testing)
+#### 1. OpenWebUI (Recommended for End Users)
+
+Use the OpenWebUI Pipe function for the best user experience with real-time status updates:
+
+1. Open OpenWebUI
+2. Select "N8N Pipe" as the model
+3. Enter your project requirements:
+
+```
+Build a patient appointment scheduling system for a healthcare clinic.
+The system should allow patients to book appointments online, send
+reminders, and integrate with the clinic's existing EHR system.
+```
+
+4. Watch real-time status updates in the chat as the workflow progresses
+
+#### 2. Chat Trigger (n8n Interactive Testing)
 
 1. Open the n8n Chat interface (click **Chat** button on the workflow)
 2. Enter your project requirements, for example:
@@ -221,9 +441,9 @@ reminders, and integrate with the clinic's existing EHR system.
 Key stakeholders: Clinic administrators, doctors, patients, IT team.
 ```
 
-3. The workflow will display progress messages as it runs in the chat:
+3. The workflow will display progress messages as it runs in the chat
 
-#### 2. Webhook Trigger (Programmatic API Integration)
+#### 3. Webhook Trigger (Programmatic API Integration)
 
 For programmatic access, use the webhook endpoint:
 

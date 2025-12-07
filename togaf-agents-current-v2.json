@@ -6,36 +6,36 @@
         "httpMethod": "POST",
         "path": "togaf-architect-v2",
         "authentication": "headerAuth",
-        "responseMode": "streaming",
+        "responseMode": "responseNode",
         "options": {}
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -11216,
-        -832
+        -6288,
+        -1328
       ],
-      "id": "webhook-v2",
+      "id": "eb22b8da-0915-446c-abac-50a33ae22038",
       "name": "Webhook v2",
       "webhookId": "togaf-architect-v2-webhook",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "yOVwvCcrN3rQmwXe",
-          "name": "Header Auth account 2"
+          "id": "2gh9yGODfzxYgKRp",
+          "name": "Header Auth account"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// Normalize input from Webhook Trigger\nconst inputData = $input.first().json;\n\n// Extract chatInput from POST body\nlet chatInput = '';\nlet triggerSource = 'webhook';\n\nif (inputData.body && inputData.body.chatInput) {\n  chatInput = inputData.body.chatInput;\n} else if (inputData.chatInput) {\n  chatInput = inputData.chatInput;\n}\n\nreturn {\n  json: {\n    chatInput,\n    triggerSource,\n    originalData: inputData\n  }\n};"
+        "jsCode": "// Normalize input from Webhook Trigger\nconst inputData = $input.first().json;\n\n// Extract chatInput from POST body\nlet chatInput = '';\nlet triggerSource = 'webhook';\n\nif (inputData.body && inputData.body.chatInput) {\n  chatInput = inputData.body.chatInput;\n} else if (inputData.chatInput) {\n  chatInput = inputData.chatInput;\n}\n\n// IMPORTANT: Pass through executionId from Quick ExecutionId Generator\nconst executionId = inputData.executionId;\n\nreturn {\n  json: {\n    chatInput,\n    triggerSource,\n    executionId,  // Pass through executionId\n    originalData: inputData\n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -11024,
-        -784
+        -6096,
+        -1280
       ],
-      "id": "input-normalizer-v2",
+      "id": "1ccc2cd0-b41a-417f-9a4d-9d7915b02d39",
       "name": "Input Normalizer"
     },
     {
@@ -49,37 +49,37 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -10880,
-        -784
+        -5952,
+        -1280
       ],
-      "id": "service-name-agent-v2",
+      "id": "88d90cee-5b89-483e-b5e3-22c4df02534c",
       "name": "Service Name Agent",
       "onError": "continueErrorOutput"
     },
     {
       "parameters": {
-        "jsCode": "// Parse the AI agent output and prepare for downstream nodes\nconst agentOutput = $input.first().json.output || '{}';\nconst triggerSource = $('Input Normalizer').first().json.triggerSource || 'chat';\nconst chatInput = $('Input Normalizer').first().json.chatInput || '';\n\nlet parsed = {};\ntry {\n  const jsonMatch = agentOutput.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  }\n} catch (e) {\n  parsed = {\n    serviceName: 'default-service',\n    projectName: 'Default Project',\n    domain: 'Technology',\n    language: 'python',\n    description: 'Auto-generated service'\n  };\n}\n\nlet repoName = (parsed.serviceName || 'service')\n  .toLowerCase()\n  .replace(/[^a-z0-9-]/g, '-')\n  .replace(/-+/g, '-')\n  .replace(/^-|-$/g, '')\n  .substring(0, 40);\n\nrepoName = repoName + '-' + Date.now().toString().slice(-6);\n\nconst statusLog = ['Starting TOGAF Enterprise Architecture Process'];\n\nreturn {\n  json: {\n    chatInput,\n    projectName: parsed.projectName || 'New Project',\n    repositoryName: repoName,\n    serviceName: parsed.serviceName,\n    domain: parsed.domain || 'Technology',\n    language: parsed.language || 'python',\n    description: parsed.description || '',\n    triggerSource,\n    statusLog,\n    timestamp: new Date().toISOString()\n  }\n};"
+        "jsCode": "// Parse the AI agent output and prepare for downstream nodes\nconst agentOutput = $input.first().json.output || '{}';\nconst triggerSource = $('Input Normalizer').first().json.triggerSource || 'chat';\nconst chatInput = $('Input Normalizer').first().json.chatInput || '';\nconst executionId = $('Input Normalizer').first().json.executionId;  // Pass through executionId\n\nlet parsed = {};\ntry {\n  const jsonMatch = agentOutput.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  }\n} catch (e) {\n  parsed = {\n    serviceName: 'default-service',\n    projectName: 'Default Project',\n    domain: 'Technology',\n    language: 'python',\n    description: 'Auto-generated service'\n  };\n}\n\nlet repoName = (parsed.serviceName || 'service')\n  .toLowerCase()\n  .replace(/[^a-z0-9-]/g, '-')\n  .replace(/-+/g, '-')\n  .replace(/^-|-$/g, '')\n  .substring(0, 40);\n\nrepoName = repoName + '-' + Date.now().toString().slice(-6);\n\nconst statusLog = ['Starting TOGAF Enterprise Architecture Process'];\n\nreturn {\n  json: {\n    chatInput,\n    projectName: parsed.projectName || 'New Project',\n    repositoryName: repoName,\n    serviceName: parsed.serviceName,\n    domain: parsed.domain || 'Technology',\n    language: parsed.language || 'python',\n    description: parsed.description || '',\n    triggerSource,\n    executionId,  // Pass through executionId\n    statusLog,\n    timestamp: new Date().toISOString()\n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -10576,
-        -784
+        -5648,
+        -1280
       ],
-      "id": "parse-service-name-v2",
+      "id": "a9edbff5-0eaa-4387-b17b-40b29e1a32a6",
       "name": "Parse Service Name"
     },
     {
       "parameters": {
-        "jsCode": "// Store context for later retrieval by Slack listener\nconst staticData = $getWorkflowStaticData('global');\nstaticData.pendingRequests = staticData.pendingRequests || {};\n\n// Get data from Parse Service Name node (not from Slack response)\nconst parseData = $('Parse Service Name').first().json;\nconst repoName = parseData.repositoryName;\n\nstaticData.pendingRequests[repoName] = {\n  chatInput: parseData.chatInput,\n  projectName: parseData.projectName,\n  repositoryName: parseData.repositoryName,\n  domain: parseData.domain,\n  language: parseData.language,\n  description: parseData.description,\n  triggerSource: parseData.triggerSource || 'webhook',\n  timestamp: new Date().toISOString()\n};\n\nconsole.log('Stored context for:', repoName);\n\n// Pass through the project data for Create Microservice\nreturn { json: parseData };"
+        "jsCode": "// Store context for later retrieval by Slack listener\nconst staticData = $getWorkflowStaticData('global');\nstaticData.pendingRequests = staticData.pendingRequests || {};\nstaticData.executions = staticData.executions || {};\n\n// Get data from Parse Service Name node\nconst parseData = $('Parse Service Name').first().json;\nconst repoName = parseData.repositoryName;\n\n// USE THE EXISTING executionId from Quick ExecutionId Generator (passed through pipeline)\n// DO NOT generate a new one!\nconst executionId = parseData.executionId;\n\nif (!executionId) {\n  console.log('WARNING: No executionId passed through pipeline!');\n}\n\nstaticData.pendingRequests[repoName] = {\n  chatInput: parseData.chatInput,\n  projectName: parseData.projectName,\n  repositoryName: parseData.repositoryName,\n  domain: parseData.domain,\n  language: parseData.language,\n  description: parseData.description,\n  triggerSource: parseData.triggerSource || 'webhook',\n  executionId: executionId,  // Use existing executionId\n  timestamp: new Date().toISOString()\n};\n\n// Update execution status with project details (status already exists from Quick ExecutionId Generator)\nif (executionId && staticData.executions[executionId]) {\n  staticData.executions[executionId] = {\n    ...staticData.executions[executionId],\n    phase: 'starting',\n    message: `🚀 *TOGAF Enterprise Architecture Started*\\n\\n📋 *Project:* ${parseData.projectName}\\n📦 *Repository:* \\`${parseData.repositoryName}\\`\\n🌐 *Domain:* ${parseData.domain || 'Technology'}\\n\\n⏳ Starting architecture generation...`,\n    progress: 5,\n    projectName: parseData.projectName,\n    repositoryName: parseData.repositoryName,\n    domain: parseData.domain,\n    updatedAt: new Date().toISOString()\n  };\n}\n\nconsole.log('Stored context for:', repoName, 'with executionId:', executionId);\n\n// Pass through the project data with executionId\nreturn {\n  json: {\n    ...parseData,\n    executionId\n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -10416,
-        -784
+        -5488,
+        -1280
       ],
-      "id": "store-context-v2",
+      "id": "b4e38e1e-ad27-445a-aa5b-4310d3475c16",
       "name": "Store Context"
     },
     {
@@ -103,10 +103,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -10256,
-        -784
+        -5328,
+        -1280
       ],
-      "id": "create-microservice-v2",
+      "id": "e268d1b4-b21c-4f12-bc47-70af5abb7189",
       "name": "Create Microservice"
     },
     {
@@ -122,14 +122,14 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
       "typeVersion": 1.3,
       "position": [
-        -9936,
-        -544
+        -5008,
+        -1040
       ],
-      "id": "anthropic-model-v2",
+      "id": "ffe39295-4e65-4949-8bcd-920a5c184f42",
       "name": "Anthropic Chat Model",
       "credentials": {
         "anthropicApi": {
-          "id": "ZDKMG38FCieXOBKt",
+          "id": "LYWwT0Ge4xqMrKBH",
           "name": "Anthropic account"
         }
       }
@@ -144,10 +144,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -11328,
-        64
+        -6400,
+        -432
       ],
-      "id": "slack-events-webhook-v2",
+      "id": "c9c97a0d-479c-49d8-987c-f63562be65f3",
       "name": "Slack Events Webhook v2",
       "webhookId": "slack-events-togaf-v2",
       "onError": "continueRegularOutput"
@@ -178,10 +178,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -11088,
-        64
+        -6160,
+        -432
       ],
-      "id": "is-challenge-v2",
+      "id": "b994b63e-23b1-449f-877d-ebc7ddb2bd11",
       "name": "Is Challenge?"
     },
     {
@@ -203,10 +203,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        -10832,
-        -96
+        -5904,
+        -592
       ],
-      "id": "respond-challenge-v2",
+      "id": "e95b5ad9-81bb-40c6-aeb7-8fbfb4077e3d",
       "name": "Respond Challenge"
     },
     {
@@ -244,10 +244,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -10832,
-        160
+        -5904,
+        -336
       ],
-      "id": "if-repo-ready-v2",
+      "id": "2baf108d-5ee4-410e-8401-9fd879ba97b0",
       "name": "IF Repo Ready"
     },
     {
@@ -261,10 +261,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        -10576,
-        64
+        -5648,
+        -432
       ],
-      "id": "respond-ok-v2",
+      "id": "e8191298-b3b2-444c-9acf-afce27c1ac23",
       "name": "Respond OK"
     },
     {
@@ -274,10 +274,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -10576,
-        256
+        -5648,
+        -240
       ],
-      "id": "extract-repo-name-v2",
+      "id": "03d29583-0eff-4ed6-b712-0ea25784765b",
       "name": "Extract Repo Name"
     },
     {
@@ -287,10 +287,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -10336,
-        256
+        -5408,
+        -240
       ],
-      "id": "retrieve-context-v2",
+      "id": "3b2f46b3-413b-40de-9779-7fafe8645c62",
       "name": "Retrieve Context"
     },
     {
@@ -304,10 +304,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -10096,
-        256
+        -5168,
+        -240
       ],
-      "id": "slack-orchestrator-v2",
+      "id": "3afb27f4-f396-45d6-a200-7fc8600a750c",
       "name": "Slack Orchestrator Agent",
       "onError": "continueErrorOutput"
     },
@@ -322,10 +322,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -9136,
-        96
+        -4208,
+        -400
       ],
-      "id": "ba-agent-v2",
+      "id": "bc91bfb5-1694-49e3-83f1-307d2a9e7a60",
       "name": "BA Agent",
       "onError": "continueErrorOutput"
     },
@@ -340,10 +340,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -9264,
-        512
+        -4336,
+        32
       ],
-      "id": "compliance-agent-v2",
+      "id": "de810086-b9dd-4410-8428-6bfb313f78d5",
       "name": "Compliance Agent",
       "onError": "continueErrorOutput"
     },
@@ -356,10 +356,10 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
       "position": [
-        -8832,
-        256
+        -3904,
+        -240
       ],
-      "id": "merge-phase-1-v2",
+      "id": "66da170a-60fc-462c-8da6-50ba41f9a35b",
       "name": "Merge Phase 1"
     },
     {
@@ -373,10 +373,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -8528,
-        256
+        -3600,
+        -240
       ],
-      "id": "business-owner-v2",
+      "id": "66bf2e85-d0c2-4ad2-bb03-47be2220bea9",
       "name": "Business Owner Agent",
       "onError": "continueErrorOutput"
     },
@@ -391,10 +391,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -8224,
-        96
+        -3296,
+        -400
       ],
-      "id": "business-architect-v2",
+      "id": "9a82765a-c176-4ffc-9f43-3cdc3acbf0ff",
       "name": "Business Architect Agent",
       "onError": "continueErrorOutput"
     },
@@ -409,10 +409,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -8224,
-        416
+        -3296,
+        -80
       ],
-      "id": "cto-agent-v2",
+      "id": "1ea4c1e6-9a22-44cb-bd96-fb52cc4a1efe",
       "name": "CTO Agent",
       "onError": "continueErrorOutput"
     },
@@ -425,10 +425,10 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
       "position": [
-        -7920,
-        256
+        -2992,
+        -240
       ],
-      "id": "merge-phase-3a-v2",
+      "id": "54c818e8-c11b-45f9-9df0-fce5052905b1",
       "name": "Merge Phase 3A"
     },
     {
@@ -442,10 +442,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -7616,
-        256
+        -2688,
+        -240
       ],
-      "id": "app-architect-v2",
+      "id": "b4672dc2-c7d2-42a6-ab76-788620b22ce0",
       "name": "Application Architect Agent",
       "onError": "continueErrorOutput"
     },
@@ -460,10 +460,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -7312,
-        256
+        -2384,
+        -240
       ],
-      "id": "infra-architect-v2",
+      "id": "65e3a7b3-12a5-4f1f-9fa4-19c37df55ef6",
       "name": "Infrastructure Architect Agent",
       "onError": "continueErrorOutput"
     },
@@ -478,10 +478,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -7008,
-        256
+        -2080,
+        -240
       ],
-      "id": "pm-agent-v2",
+      "id": "8a656280-9082-405d-a056-3d09eec377ac",
       "name": "Project Manager Agent",
       "onError": "continueErrorOutput"
     },
@@ -496,10 +496,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -6704,
-        256
+        -1776,
+        -240
       ],
-      "id": "solution-architect-v2",
+      "id": "3c3ef319-8e48-49c4-b23a-59853fef1d51",
       "name": "Solution Architect Agent",
       "onError": "continueErrorOutput"
     },
@@ -510,10 +510,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -6400,
-        256
+        -1472,
+        -240
       ],
-      "id": "parse-project-context-v2",
+      "id": "ef81785f-5a80-4277-87a3-cc8ad978c542",
       "name": "Parse Project Context"
     },
     {
@@ -536,16 +536,16 @@
       "type": "n8n-nodes-base.github",
       "typeVersion": 1.1,
       "position": [
-        -6096,
-        0
+        -1168,
+        -496
       ],
-      "id": "commit-requirements-v2",
+      "id": "f1267392-041e-4c64-8f0a-56e9eb9a5d56",
       "name": "Commit Requirements",
       "webhookId": "99122e74-bbe9-4c96-bff3-1ea3148aecb9",
       "credentials": {
         "githubApi": {
-          "id": "a3T4qschjFzSez08",
-          "name": "GitHub account 2"
+          "id": "xMomY4rofJnStyk3",
+          "name": "GitHub account"
         }
       }
     },
@@ -569,16 +569,16 @@
       "type": "n8n-nodes-base.github",
       "typeVersion": 1.1,
       "position": [
-        -6096,
-        144
+        -1168,
+        -352
       ],
-      "id": "commit-compliance-v2",
+      "id": "eccd6f04-412a-4a5b-b0ab-0d050f35f04b",
       "name": "Commit Compliance",
       "webhookId": "e1394e9e-c1b3-4687-847b-370fc9b16e9f",
       "credentials": {
         "githubApi": {
-          "id": "a3T4qschjFzSez08",
-          "name": "GitHub account 2"
+          "id": "xMomY4rofJnStyk3",
+          "name": "GitHub account"
         }
       }
     },
@@ -602,16 +602,16 @@
       "type": "n8n-nodes-base.github",
       "typeVersion": 1.1,
       "position": [
-        -6096,
-        288
+        -1168,
+        -208
       ],
-      "id": "commit-business-canvas-v2",
+      "id": "56fff6ca-ddfe-4f9e-924c-9bc03a8677bc",
       "name": "Commit Business Canvas",
       "webhookId": "875c63cb-778c-4a22-b0b3-f01802034753",
       "credentials": {
         "githubApi": {
-          "id": "a3T4qschjFzSez08",
-          "name": "GitHub account 2"
+          "id": "xMomY4rofJnStyk3",
+          "name": "GitHub account"
         }
       }
     },
@@ -635,16 +635,16 @@
       "type": "n8n-nodes-base.github",
       "typeVersion": 1.1,
       "position": [
-        -6096,
-        432
+        -1168,
+        -64
       ],
-      "id": "commit-business-arch-v2",
+      "id": "c5d6d92c-2a14-4ee4-9569-8a2ff035d806",
       "name": "Commit Business Architecture",
       "webhookId": "dab53d66-735e-4149-9d12-1d6934cb60ca",
       "credentials": {
         "githubApi": {
-          "id": "a3T4qschjFzSez08",
-          "name": "GitHub account 2"
+          "id": "xMomY4rofJnStyk3",
+          "name": "GitHub account"
         }
       }
     },
@@ -668,16 +668,16 @@
       "type": "n8n-nodes-base.github",
       "typeVersion": 1.1,
       "position": [
-        -6096,
-        576
+        -1168,
+        96
       ],
-      "id": "commit-tech-rec-v2",
+      "id": "559e2ad6-024f-41cd-9dff-4eaf1cf6b76f",
       "name": "Commit Tech Recommendations",
       "webhookId": "543fc241-8485-49b0-820f-8b6704287474",
       "credentials": {
         "githubApi": {
-          "id": "a3T4qschjFzSez08",
-          "name": "GitHub account 2"
+          "id": "xMomY4rofJnStyk3",
+          "name": "GitHub account"
         }
       }
     },
@@ -690,10 +690,10 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
       "position": [
-        -5792,
-        256
+        -864,
+        -240
       ],
-      "id": "merge-commits-1-v2",
+      "id": "74b5fefc-51b1-4f11-b9ec-3e41a99cf365",
       "name": "Merge Commits 1"
     },
     {
@@ -716,16 +716,16 @@
       "type": "n8n-nodes-base.github",
       "typeVersion": 1.1,
       "position": [
-        -5488,
-        0
+        -560,
+        -496
       ],
-      "id": "commit-app-arch-v2",
+      "id": "5a212a1b-57b8-4eb7-a0ca-e73f9a67e58b",
       "name": "Commit App Architecture",
       "webhookId": "f494109c-cbd3-4590-9143-28d96c878109",
       "credentials": {
         "githubApi": {
-          "id": "a3T4qschjFzSez08",
-          "name": "GitHub account 2"
+          "id": "xMomY4rofJnStyk3",
+          "name": "GitHub account"
         }
       }
     },
@@ -749,16 +749,16 @@
       "type": "n8n-nodes-base.github",
       "typeVersion": 1.1,
       "position": [
-        -5488,
-        144
+        -560,
+        -352
       ],
-      "id": "commit-infra-arch-v2",
+      "id": "60788481-174e-4cf4-ac83-0f06c3cc4748",
       "name": "Commit Infra Architecture",
       "webhookId": "55dac0ef-190a-418d-909c-322c29978574",
       "credentials": {
         "githubApi": {
-          "id": "a3T4qschjFzSez08",
-          "name": "GitHub account 2"
+          "id": "xMomY4rofJnStyk3",
+          "name": "GitHub account"
         }
       }
     },
@@ -782,16 +782,16 @@
       "type": "n8n-nodes-base.github",
       "typeVersion": 1.1,
       "position": [
-        -5488,
-        288
+        -560,
+        -208
       ],
-      "id": "commit-impl-plan-v2",
+      "id": "4c3fecae-1afe-43ef-a9e7-28bfe3427df2",
       "name": "Commit Implementation Plan",
       "webhookId": "5aeda89f-312f-4884-8bdf-10ea763d4db1",
       "credentials": {
         "githubApi": {
-          "id": "a3T4qschjFzSez08",
-          "name": "GitHub account 2"
+          "id": "xMomY4rofJnStyk3",
+          "name": "GitHub account"
         }
       }
     },
@@ -815,16 +815,16 @@
       "type": "n8n-nodes-base.github",
       "typeVersion": 1.1,
       "position": [
-        -5488,
-        432
+        -560,
+        -64
       ],
-      "id": "commit-oam-v2",
+      "id": "f900be74-f0c8-45ca-91f3-c09db3d2cc74",
       "name": "Commit OAM Application",
       "webhookId": "e6fdf1e7-3ea1-4508-8490-0bc942f197ba",
       "credentials": {
         "githubApi": {
-          "id": "a3T4qschjFzSez08",
-          "name": "GitHub account 2"
+          "id": "xMomY4rofJnStyk3",
+          "name": "GitHub account"
         }
       }
     },
@@ -837,10 +837,10 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
       "position": [
-        -5184,
-        256
+        -256,
+        -240
       ],
-      "id": "merge-commits-2-v2",
+      "id": "20e31eaa-5230-4198-a281-a7a82ad54c45",
       "name": "Merge Commits 2"
     },
     {
@@ -863,16 +863,16 @@
       "type": "n8n-nodes-base.github",
       "typeVersion": 1.1,
       "position": [
-        -4880,
-        256
+        48,
+        -240
       ],
-      "id": "commit-prd-v2",
+      "id": "9f907a5e-e2df-48e9-9eaa-5ec9ea21b9f7",
       "name": "Commit PRD",
       "webhookId": "229ea0ac-68c4-4dbc-80db-91ee43885041",
       "credentials": {
         "githubApi": {
-          "id": "a3T4qschjFzSez08",
-          "name": "GitHub account 2"
+          "id": "xMomY4rofJnStyk3",
+          "name": "GitHub account"
         }
       }
     },
@@ -890,15 +890,15 @@
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.2,
       "position": [
-        -4576,
-        256
+        352,
+        -240
       ],
-      "id": "slack-completion-v2",
+      "id": "f2082dce-b847-40f0-9296-4ba2b06754c7",
       "name": "Send Completion Notification",
       "webhookId": "c290895f-e29b-4b2a-bc4d-cc77d83f16ef",
       "credentials": {
         "slackApi": {
-          "id": "FGnClpVvmu5ycOWN",
+          "id": "M4rJxHPbTUV0TiBj",
           "name": "Slack account"
         }
       }
@@ -914,10 +914,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        -4336,
-        256
+        592,
+        -240
       ],
-      "id": "respond-webhook-v2",
+      "id": "8e93112d-b9ac-4551-b22a-9d521a862a6f",
       "name": "Respond to TOGAF Webhook"
     },
     {
@@ -929,10 +929,10 @@
       "type": "@n8n/n8n-nodes-langchain.chatTrigger",
       "typeVersion": 1.3,
       "position": [
-        -11152,
-        -528
+        -6224,
+        -1024
       ],
-      "id": "chat-trigger-v2",
+      "id": "1a4d3cc4-6d81-4e3a-974c-a7e9b074168b",
       "name": "When chat message received",
       "webhookId": "togaf-chat-v2"
     },
@@ -945,23 +945,23 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -11696,
-        -976
+        -6768,
+        -1472
       ],
-      "id": "instructions-v2",
+      "id": "c0675016-fc6a-4215-9343-6865d6f7fae9",
       "name": "Instructions v2"
     },
     {
       "parameters": {
         "jsCode": "// Error Classification and Handling for TOGAF Workflow v2\n// Classifies errors into categories and determines appropriate action\n\nconst error = $input.first().json;\nconst errorMessage = error.message || error.error || JSON.stringify(error);\nconst nodeName = error.nodeName || 'Unknown';\nconst errorStack = error.stack || '';\n\n// Error classification\nconst classifyError = (message, stack) => {\n  const msg = (message + ' ' + stack).toLowerCase();\n  \n  // AUTH_ERROR - User needs to fix credentials\n  if (msg.includes('401') || msg.includes('403') || msg.includes('unauthorized') || \n      msg.includes('forbidden') || msg.includes('invalid_auth') || msg.includes('token')) {\n    return {\n      type: 'AUTH_ERROR',\n      userFixable: true,\n      shouldRetry: false,\n      friendlyMessage: 'Authentication failed. Please check your credentials in n8n.',\n      action: 'STOP_AND_NOTIFY'\n    };\n  }\n  \n  // RATE_LIMIT - Transient, should retry with backoff\n  if (msg.includes('429') || msg.includes('rate limit') || msg.includes('too many requests') ||\n      msg.includes('quota exceeded')) {\n    return {\n      type: 'RATE_LIMIT',\n      userFixable: false,\n      shouldRetry: true,\n      retryAfter: 60,\n      friendlyMessage: 'Rate limit reached. The system will retry automatically.',\n      action: 'RETRY_WITH_BACKOFF'\n    };\n  }\n  \n  // NETWORK_ERROR - Transient, should retry\n  if (msg.includes('econnrefused') || msg.includes('enotfound') || msg.includes('timeout') ||\n      msg.includes('network') || msg.includes('503') || msg.includes('502') || msg.includes('504')) {\n    return {\n      type: 'NETWORK_ERROR',\n      userFixable: false,\n      shouldRetry: true,\n      retryAfter: 30,\n      friendlyMessage: 'Network issue detected. Retrying...',\n      action: 'RETRY_WITH_BACKOFF'\n    };\n  }\n  \n  // VALIDATION_ERROR - User needs to fix input\n  if (msg.includes('validation') || msg.includes('invalid') || msg.includes('required') ||\n      msg.includes('missing parameter') || msg.includes('bad request') || msg.includes('400')) {\n    return {\n      type: 'VALIDATION_ERROR',\n      userFixable: true,\n      shouldRetry: false,\n      friendlyMessage: 'Invalid input detected. Please check your request.',\n      action: 'STOP_AND_NOTIFY'\n    };\n  }\n  \n  // LLM_ERROR - May be transient (overload) or permanent (content policy)\n  if (msg.includes('anthropic') || msg.includes('openai') || msg.includes('llm') ||\n      msg.includes('completion') || msg.includes('content policy') || msg.includes('overloaded')) {\n    const isOverload = msg.includes('overloaded') || msg.includes('capacity');\n    return {\n      type: 'LLM_ERROR',\n      userFixable: !isOverload,\n      shouldRetry: isOverload,\n      retryAfter: isOverload ? 120 : 0,\n      friendlyMessage: isOverload \n        ? 'AI service is busy. Retrying in 2 minutes...'\n        : 'AI processing error. Please try rephrasing your request.',\n      action: isOverload ? 'RETRY_WITH_BACKOFF' : 'STOP_AND_NOTIFY'\n    };\n  }\n  \n  // GITHUB_ERROR - May be auth or transient\n  if (msg.includes('github') || msg.includes('repository') || msg.includes('commit')) {\n    return {\n      type: 'GITHUB_ERROR',\n      userFixable: true,\n      shouldRetry: false,\n      friendlyMessage: 'GitHub operation failed. Please check repository permissions.',\n      action: 'STOP_AND_NOTIFY'\n    };\n  }\n  \n  // UNKNOWN_ERROR - Default, stop and notify\n  return {\n    type: 'UNKNOWN_ERROR',\n    userFixable: false,\n    shouldRetry: false,\n    friendlyMessage: 'An unexpected error occurred. The team has been notified.',\n    action: 'STOP_AND_NOTIFY'\n  };\n};\n\nconst classification = classifyError(errorMessage, errorStack);\n\n// Build error report\nconst errorReport = {\n  ...classification,\n  originalError: errorMessage,\n  nodeName: nodeName,\n  timestamp: new Date().toISOString()\n};\n\nreturn errorReport;"
       },
-      "id": "error-classifier-v2",
+      "id": "5b35a349-c2f1-4e5d-8f89-68e6aea73899",
       "name": "Error Classifier",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -4800,
-        608
+        128,
+        128
       ]
     },
     {
@@ -975,18 +975,18 @@
         "text": "=:warning: *TOGAF Workflow Error*\n\n{{ $json.friendlyMessage }}\n\n*Error Type:* `{{ $json.type }}`\n*Node:* `{{ $json.nodeName }}`\n*Time:* {{ $json.timestamp }}\n\n{{ $json.userFixable ? ':point_up: *Action Required:* Please fix the issue above and try again.' : ':arrows_counterclockwise: The team has been notified and is investigating.' }}",
         "otherOptions": {}
       },
-      "id": "slack-error-notify-v2",
+      "id": "c8302366-44fa-42c9-b2ad-20791bc1044f",
       "name": "Notify User of Error",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.2,
       "position": [
-        -4496,
-        608
+        432,
+        128
       ],
       "webhookId": "8c324f72-32bb-40c5-b35b-b9ce23f90308",
       "credentials": {
         "slackApi": {
-          "id": "FGnClpVvmu5ycOWN",
+          "id": "M4rJxHPbTUV0TiBj",
           "name": "Slack account"
         }
       }
@@ -1002,18 +1002,18 @@
         "text": "=:rocket: *TOGAF Enterprise Architecture Started*\n\n:clipboard: *Project:* {{ $json.projectName || 'New Project' }}\n:package: *Repository:* `{{ $json.repositoryName }}`\n:globe_with_meridians: *Domain:* {{ $json.domain || 'Technology' }}\n\n:hourglass_flowing_sand: Starting architecture generation... This typically takes 3-5 minutes.",
         "otherOptions": {}
       },
-      "id": "progress-start-v2",
+      "id": "ea5ff856-4929-4266-8300-09a008ba7657",
       "name": "Progress: Starting",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.2,
       "position": [
-        -10352,
-        -608
+        -5424,
+        -1104
       ],
       "webhookId": "11d9e2c4-c930-4db7-866a-c561c379fd2f",
       "credentials": {
         "slackApi": {
-          "id": "FGnClpVvmu5ycOWN",
+          "id": "M4rJxHPbTUV0TiBj",
           "name": "Slack account"
         }
       }
@@ -1029,18 +1029,18 @@
         "text": ":mag: *Phase 1: Requirements Analysis*\n\n:white_check_mark: Context established\n:hammer_and_wrench: Business Analyst researching requirements...\n:hammer_and_wrench: Compliance Officer identifying regulations...",
         "otherOptions": {}
       },
-      "id": "progress-phase1-v2",
+      "id": "2c1d4bd6-4780-462a-b97b-ed0ac2dd8b52",
       "name": "Progress: Phase 1",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.2,
       "position": [
-        -9504,
-        -96
+        -4576,
+        -592
       ],
       "webhookId": "b6f77258-53b2-4628-8877-97f77d0e60bf",
       "credentials": {
         "slackApi": {
-          "id": "FGnClpVvmu5ycOWN",
+          "id": "M4rJxHPbTUV0TiBj",
           "name": "Slack account"
         }
       }
@@ -1056,18 +1056,18 @@
         "text": ":chart_with_upwards_trend: *Phase 2: Business Architecture*\n\n:white_check_mark: Requirements & Compliance complete\n:hammer_and_wrench: Building Business Model Canvas...\n:hammer_and_wrench: Creating Business Architecture...\n:hammer_and_wrench: Gathering Technology Recommendations...",
         "otherOptions": {}
       },
-      "id": "progress-phase2-v2",
+      "id": "9ff31cd6-ab16-478b-a9a6-bb39d547c468",
       "name": "Progress: Phase 2",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.2,
       "position": [
-        -8704,
-        464
+        -3776,
+        -32
       ],
       "webhookId": "918fff29-9c0b-4b68-9f8e-ec198861b9bd",
       "credentials": {
         "slackApi": {
-          "id": "FGnClpVvmu5ycOWN",
+          "id": "M4rJxHPbTUV0TiBj",
           "name": "Slack account"
         }
       }
@@ -1083,18 +1083,18 @@
         "text": ":gear: *Phase 3: Technical Architecture*\n\n:white_check_mark: Business Architecture complete\n:hammer_and_wrench: Designing Application Architecture...\n:hammer_and_wrench: Planning Infrastructure...\n:hammer_and_wrench: Creating Implementation Plan...",
         "otherOptions": {}
       },
-      "id": "progress-phase3-v2",
+      "id": "043a20f6-993f-4b10-a671-82de7c1e5993",
       "name": "Progress: Phase 3",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.2,
       "position": [
-        -7744,
-        464
+        -2816,
+        -32
       ],
       "webhookId": "a556f4b2-17bb-4a12-b4db-533bae32a0b8",
       "credentials": {
         "slackApi": {
-          "id": "FGnClpVvmu5ycOWN",
+          "id": "M4rJxHPbTUV0TiBj",
           "name": "Slack account"
         }
       }
@@ -1110,31 +1110,31 @@
         "text": ":floppy_disk: *Phase 4: Committing Artifacts*\n\n:white_check_mark: All architecture models generated\n:hammer_and_wrench: Committing 10 files to GitHub repository...\n:hammer_and_wrench: Generating PRD with Mermaid diagrams...",
         "otherOptions": {}
       },
-      "id": "progress-committing-v2",
+      "id": "4b76ffe3-0a6a-4a30-ac20-b1c66bb77a4d",
       "name": "Progress: Committing",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.2,
       "position": [
-        -6256,
-        464
+        -1328,
+        -32
       ],
       "webhookId": "d6cf76ba-3c71-4c84-96ce-bb725aaf5aac",
       "credentials": {
         "slackApi": {
-          "id": "FGnClpVvmu5ycOWN",
+          "id": "M4rJxHPbTUV0TiBj",
           "name": "Slack account"
         }
       }
     },
     {
       "parameters": {},
-      "id": "merge-phase-3b-v2",
+      "id": "225e169e-daf9-4e3a-9bbd-8b2cb1eea73c",
       "name": "Merge Phase 3B",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
       "position": [
-        -6848,
-        256
+        -1920,
+        -240
       ]
     },
     {
@@ -1148,36 +1148,203 @@
         "text": ":brain: *All Architecture Agents Complete*\n\n:white_check_mark: Application Architecture designed\n:white_check_mark: Infrastructure Architecture planned\n:white_check_mark: Implementation Plan created\n:hammer_and_wrench: Solution Architect compiling final OAM deployment...",
         "otherOptions": {}
       },
-      "id": "progress-agents-done-v2",
+      "id": "fc3dc0a5-566c-4d16-8dad-eff6b32cdcbf",
       "name": "Progress: Agents Complete",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.2,
       "position": [
-        -6544,
-        256
+        -1616,
+        -240
       ],
       "webhookId": "cee916bd-e9df-41f0-a02b-59d43fc1aa4c",
       "credentials": {
         "slackApi": {
-          "id": "FGnClpVvmu5ycOWN",
+          "id": "M4rJxHPbTUV0TiBj",
           "name": "Slack account"
         }
       }
+    },
+    {
+      "parameters": {
+        "path": "togaf-status",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "status-webhook-node",
+      "name": "Status Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -6288,
+        -1600
+      ],
+      "webhookId": "togaf-status-webhook",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "2gh9yGODfzxYgKRp",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Status Handler - Returns execution status from static data\nconst staticData = $getWorkflowStaticData('global');\nconst query = $input.first().json.query || {};\nconst executionId = query.executionId;\n\nif (!executionId) {\n  return {\n    json: {\n      error: 'Missing executionId parameter',\n      done: true\n    }\n  };\n}\n\nconst status = staticData.executions?.[executionId];\n\nif (!status) {\n  return {\n    json: {\n      error: 'Execution not found',\n      executionId,\n      done: true\n    }\n  };\n}\n\n// Clean up old executions (older than 1 hour)\nconst ONE_HOUR = 60 * 60 * 1000;\nconst now = Date.now();\nif (staticData.executions) {\n  for (const [id, exec] of Object.entries(staticData.executions)) {\n    if (exec.updatedAt && (now - new Date(exec.updatedAt).getTime()) > ONE_HOUR) {\n      delete staticData.executions[id];\n    }\n  }\n}\n\nreturn { json: status };"
+      },
+      "id": "status-handler-node",
+      "name": "Status Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6048,
+        -1600
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "status-respond-node",
+      "name": "Respond Status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -5808,
+        -1600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Update status to waiting for repo creation\nconst staticData = $getWorkflowStaticData('global');\nconst executionId = $json.executionId;\n\nif (executionId && staticData.executions?.[executionId]) {\n  staticData.executions[executionId] = {\n    ...staticData.executions[executionId],\n    phase: 'waiting',\n    phaseNumber: 0,\n    message: `⏳ *Repository Creation in Progress*\\n\\n📋 *Project:* ${$json.projectName}\\n📦 *Repository:* \\`${$json.repositoryName}\\`\\n🌐 *Domain:* ${$json.domain || 'Technology'}\\n\\n🔄 Waiting for repository creation via Argo Workflow...\\n💡 This typically takes 1-2 minutes.`,\n    progress: 10,\n    updatedAt: new Date().toISOString()\n  };\n}\n\nreturn $input.all();"
+      },
+      "id": "update-status-waiting",
+      "name": "Update Status: Waiting",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5168,
+        -1280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst context = $('Retrieve Context').first().json;\nconst executionId = context.executionId;\n\nif (executionId && staticData.executions?.[executionId]) {\n  staticData.executions[executionId] = {\n    ...staticData.executions[executionId],\n    phase: 'requirements',\n    phaseNumber: 1,\n    totalPhases: 5,\n    message: `🔍 *Phase 1: Requirements Analysis*\\n\\n✅ Context established\\n🔧 Business Analyst researching requirements...\\n🔧 Compliance Officer identifying regulations...`,\n    progress: 20,\n    done: false,\n    updatedAt: new Date().toISOString()\n  };\n}\n\nreturn $input.all();"
+      },
+      "id": "update-status-phase1",
+      "name": "Update Status: Phase 1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4448,
+        -592
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst context = $('Retrieve Context').first().json;\nconst executionId = context.executionId;\n\nif (executionId && staticData.executions?.[executionId]) {\n  staticData.executions[executionId] = {\n    ...staticData.executions[executionId],\n    phase: 'business',\n    phaseNumber: 2,\n    totalPhases: 5,\n    message: `📈 *Phase 2: Business Architecture*\\n\\n✅ Requirements & Compliance complete\\n🔧 Building Business Model Canvas...\\n🔧 Creating Business Architecture...\\n🔧 Gathering Technology Recommendations...`,\n    progress: 40,\n    done: false,\n    updatedAt: new Date().toISOString()\n  };\n}\n\nreturn $input.all();"
+      },
+      "id": "update-status-phase2",
+      "name": "Update Status: Phase 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3648,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst context = $('Retrieve Context').first().json;\nconst executionId = context.executionId;\n\nif (executionId && staticData.executions?.[executionId]) {\n  staticData.executions[executionId] = {\n    ...staticData.executions[executionId],\n    phase: 'technical',\n    phaseNumber: 3,\n    totalPhases: 5,\n    message: `⚙️ *Phase 3: Technical Architecture*\\n\\n✅ Business Architecture complete\\n🔧 Designing Application Architecture...\\n🔧 Planning Infrastructure...\\n🔧 Creating Implementation Plan...`,\n    progress: 60,\n    done: false,\n    updatedAt: new Date().toISOString()\n  };\n}\n\nreturn $input.all();"
+      },
+      "id": "update-status-phase3",
+      "name": "Update Status: Phase 3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2688,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst context = $('Retrieve Context').first().json;\nconst executionId = context.executionId;\n\nif (executionId && staticData.executions?.[executionId]) {\n  staticData.executions[executionId] = {\n    ...staticData.executions[executionId],\n    phase: 'committing',\n    phaseNumber: 4,\n    totalPhases: 5,\n    message: `💾 *Phase 4: Committing Artifacts*\\n\\n✅ All architecture models generated\\n🔧 Committing 10 files to GitHub repository...\\n🔧 Generating PRD with Mermaid diagrams...`,\n    progress: 80,\n    done: false,\n    updatedAt: new Date().toISOString()\n  };\n}\n\nreturn $input.all();"
+      },
+      "id": "update-status-committing",
+      "name": "Update Status: Committing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Update status to complete\nconst staticData = $getWorkflowStaticData('global');\n\n// Try multiple sources for executionId\nlet executionId = null;\nlet projectName = 'Unknown';\nlet repositoryName = 'unknown';\nlet domain = 'Unknown';\n\n// First try Retrieve Context\ntry {\n  const context = $('Retrieve Context').first().json;\n  executionId = context.executionId;\n  projectName = context.projectName || projectName;\n  repositoryName = context.repositoryName || repositoryName;\n  domain = context.domain || domain;\n} catch (e) {\n  console.log('Could not get context from Retrieve Context:', e.message);\n}\n\n// If not found, try Parse Project Context\nif (!executionId) {\n  try {\n    const parseContext = $('Parse Project Context').first().json;\n    projectName = parseContext.projectName || projectName;\n    repositoryName = parseContext.repositoryName || repositoryName;\n    domain = parseContext.domain || domain;\n    \n    // Look up executionId by repositoryName in static data\n    if (staticData.executions) {\n      for (const [id, exec] of Object.entries(staticData.executions)) {\n        if (exec.repositoryName === repositoryName && !exec.done) {\n          executionId = id;\n          break;\n        }\n      }\n    }\n  } catch (e) {\n    console.log('Could not get context from Parse Project Context:', e.message);\n  }\n}\n\n// Update the status if we found an executionId\nif (executionId && staticData.executions?.[executionId]) {\n  staticData.executions[executionId] = {\n    ...staticData.executions[executionId],\n    phase: 'complete',\n    phaseNumber: 5,\n    totalPhases: 5,\n    message: `✅ *TOGAF Enterprise Architecture Complete*\\n\\n📦 *Repository:* \\`${repositoryName}\\`\\n📋 *Project:* ${projectName}\\n🌐 *Domain:* ${domain}\\n\\n🔗 [View Repository](https://github.com/shlapolosa/${repositoryName})`,\n    progress: 100,\n    done: true,\n    result: {\n      projectName,\n      repositoryName,\n      domain,\n      artifacts: [\n        'docs/requirements.md',\n        'docs/architecture/compliance.archimate',\n        'docs/architecture/business-canvas.archimate',\n        'docs/architecture/business-architecture.archimate',\n        'docs/architecture/technology-recommendations.archimate',\n        'docs/architecture/application-architecture.archimate',\n        'docs/architecture/infrastructure-architecture.archimate',\n        'docs/architecture/implementation-plan.archimate',\n        'docs/deployment/application.oam.yaml',\n        'docs/PRD.md'\n      ]\n    },\n    updatedAt: new Date().toISOString()\n  };\n  console.log('Updated status to complete for:', executionId);\n} else {\n  console.log('WARNING: Could not find executionId to update status. executionId:', executionId);\n}\n\nreturn $input.all();"
+      },
+      "id": "update-status-complete",
+      "name": "Update Status: Complete",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ executionId: $json.executionId, statusUrl: 'https://n8n.socrates-hlapolosa.org/webhook/togaf-status', message: 'TOGAF workflow started. Poll status endpoint for updates.', projectName: $json.projectName, repositoryName: $json.repositoryName }) }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "early-response-node",
+      "name": "Early Response with ExecutionId",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -5008,
+        -1280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate execution ID immediately on webhook receipt\nconst executionId = `togaf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\n\n// Store in workflow static data for later retrieval\nconst staticData = $getWorkflowStaticData('global');\nstaticData.executions = staticData.executions || {};\nstaticData.executions[executionId] = {\n  executionId,\n  phase: 'starting',\n  phaseNumber: 0,\n  totalPhases: 5,\n  message: 'TOGAF workflow started. Processing your request...',\n  progress: 5,\n  done: false,\n  result: null,\n  startedAt: new Date().toISOString()\n};\n\n// Pass through all input data plus executionId\nreturn {\n  json: {\n    ...$input.first().json,\n    executionId\n  }\n};"
+      },
+      "id": "quick-exec-id-gen",
+      "name": "Quick ExecutionId Generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6176,
+        -1504
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ executionId: $json.executionId, statusUrl: 'https://n8n.socrates-hlapolosa.org/webhook/togaf-status', message: 'TOGAF workflow started. Poll status endpoint for updates.' }) }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "quick-response",
+      "name": "Quick Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -5936,
+        -1504
+      ]
     }
   ],
   "pinData": {},
   "connections": {
-    "Webhook v2": {
-      "main": [
-        [
-          {
-            "node": "Input Normalizer",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "When chat message received": {
       "main": [
         [
@@ -1216,17 +1383,6 @@
         [
           {
             "node": "Progress: Starting",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Store Context": {
-      "main": [
-        [
-          {
-            "node": "Create Microservice",
             "type": "main",
             "index": 0
           }
@@ -1545,7 +1701,7 @@
       "main": [
         [
           {
-            "node": "Respond to TOGAF Webhook",
+            "node": "Update Status: Complete",
             "type": "main",
             "index": 0
           }
@@ -1578,12 +1734,7 @@
       "main": [
         [
           {
-            "node": "BA Agent",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Compliance Agent",
+            "node": "Update Status: Phase 1",
             "type": "main",
             "index": 0
           }
@@ -1594,7 +1745,7 @@
       "main": [
         [
           {
-            "node": "Business Owner Agent",
+            "node": "Update Status: Phase 2",
             "type": "main",
             "index": 0
           }
@@ -1605,17 +1756,7 @@
       "main": [
         [
           {
-            "node": "Application Architect Agent",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Infrastructure Architect Agent",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Project Manager Agent",
+            "node": "Update Status: Phase 3",
             "type": "main",
             "index": 0
           }
@@ -1626,27 +1767,7 @@
       "main": [
         [
           {
-            "node": "Commit Requirements",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Commit Compliance",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Commit Business Canvas",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Commit Business Architecture",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Commit Tech Recommendations",
+            "node": "Update Status: Committing",
             "type": "main",
             "index": 0
           }
@@ -1736,20 +1857,185 @@
           }
         ]
       ]
+    },
+    "Status Webhook": {
+      "main": [
+        [
+          {
+            "node": "Status Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Handler": {
+      "main": [
+        [
+          {
+            "node": "Respond Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Context": {
+      "main": [
+        [
+          {
+            "node": "Update Status: Waiting",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Early Response with ExecutionId",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status: Waiting": {
+      "main": [
+        [
+          {
+            "node": "Create Microservice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status: Phase 1": {
+      "main": [
+        [
+          {
+            "node": "BA Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Compliance Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status: Phase 2": {
+      "main": [
+        [
+          {
+            "node": "Business Owner Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status: Phase 3": {
+      "main": [
+        [
+          {
+            "node": "Application Architect Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Infrastructure Architect Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Project Manager Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status: Committing": {
+      "main": [
+        [
+          {
+            "node": "Commit Requirements",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Compliance",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Business Canvas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Business Architecture",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commit Tech Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status: Complete": {
+      "main": [
+        [
+          {
+            "node": "Respond to TOGAF Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook v2": {
+      "main": [
+        [
+          {
+            "node": "Quick ExecutionId Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quick ExecutionId Generator": {
+      "main": [
+        [
+          {
+            "node": "Quick Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Input Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
   "settings": {
     "executionOrder": "v1",
     "callerPolicy": "workflowsFromSameOwner",
-    "availableInMCP": false,
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all"
+    "availableInMCP": false
   },
-  "versionId": "240aff6e-f0ab-4755-b01d-d6b6faec6734",
+  "versionId": "5dc39004-e6f6-4838-9526-67edd95886c4",
   "meta": {
-    "instanceId": "c11df0eb54e1527c1b0cc7f28e0d4e243a0e5f8060e9c90276c6fd715279c39c"
+    "templateCredsSetupCompleted": true,
+    "instanceId": "54865750559b8df5446de695b1f46abd535831febb435d6ec17789556e703153"
   },
-  "id": "dIKVgIPfB83InzFx",
+  "id": "v2ijesOJ4mPAFFpb",
   "tags": []
 }
